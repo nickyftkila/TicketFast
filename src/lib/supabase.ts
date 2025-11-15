@@ -1,9 +1,31 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ktbnambciqauyssrneyl.supabase.co'
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0Ym5hbWJjaXFhdXlzc3JuZXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2ODUyOTgsImV4cCI6MjA3NDI2MTI5OH0.B7osCpOpMtZSSzLZTMqnVyuHd__fGzXuZlJjZzYONiU'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Validar que las credenciales estén configuradas
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('⚠️ Error: Las credenciales de Supabase no están configuradas. Por favor, configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en tu archivo .env.local')
+}
+
+// Singleton pattern para evitar múltiples instancias del cliente
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabaseClient(): SupabaseClient {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: 'ticketfast-auth' // Clave única para evitar conflictos
+      }
+    })
+  }
+  return supabaseInstance
+}
+
+export const supabase = getSupabaseClient()
 
 // Tipos para TypeScript
 export interface User {
@@ -23,6 +45,17 @@ export interface Ticket {
   image_url: string | null
   status: 'pending' | 'in_progress' | 'resolved'
   created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface TicketResponse {
+  id: string
+  ticket_id: string
+  message: string
+  image_url: string | null
+  created_by: string
+  is_support_response: boolean
   created_at: string
   updated_at: string
 }

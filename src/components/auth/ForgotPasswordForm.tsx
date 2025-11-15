@@ -122,7 +122,7 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
           {/* Error Message */}
           {errors.root && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-600 dark:text-red-400">
+              <p className="text-sm text-red-600 dark:text-red-400 whitespace-pre-line">
                 {errors.root.message}
               </p>
             </div>

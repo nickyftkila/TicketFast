@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -93,12 +94,18 @@ export function useAuth() {
       });
 
       if (error) {
-        throw error;
+        // Convertir el error de Supabase a Error estándar
+        const errorMessage = error.message || 'Error al iniciar sesión';
+        return { data: null, error: new Error(errorMessage) };
       }
 
       return { data, error: null };
     } catch (error: unknown) {
-      return { data: null, error: error instanceof Error ? error : new Error('Error desconocido') };
+      // Manejar errores inesperados
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Error desconocido al iniciar sesión';
+      return { data: null, error: new Error(errorMessage) };
     } finally {
       setLoading(false);
     }
@@ -118,12 +125,35 @@ export function useAuth() {
       });
 
       if (error) {
-        throw error;
+        // Convertir el error de Supabase a Error estándar
+        const errorMessage = error.message || 'Error al registrar usuario';
+        return { data: null, error: new Error(errorMessage) };
+      }
+
+      // Crear el registro en la tabla users después del registro exitoso
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            email: data.user.email!,
+            full_name: fullName,
+            role: 'user' // Por defecto todos son 'user'
+          });
+
+        if (profileError) {
+          console.error('Error creando perfil de usuario:', profileError);
+          // No fallamos el registro si solo falla la creación del perfil
+          // El usuario puede actualizar su perfil después
+        }
       }
 
       return { data, error: null };
     } catch (error: unknown) {
-      return { data: null, error: error instanceof Error ? error : new Error('Error desconocido') };
+      // Manejar errores inesperados
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Error desconocido al registrar usuario';
+      return { data: null, error: new Error(errorMessage) };
     } finally {
       setLoading(false);
     }
@@ -136,12 +166,43 @@ export function useAuth() {
       });
 
       if (error) {
-        throw error;
+        // Detectar errores de conexión o autenticación
+        let errorMessage = error.message || 'Error al enviar correo de recuperación';
+        
+        // Mensajes más descriptivos para errores comunes
+        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
+          errorMessage = 'Error de configuración: Las credenciales de Supabase no son válidas. Por favor, verifica tu configuración.';
+        } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+          errorMessage = 'Error de conexión: No se pudo conectar con el servidor. Verifica tu conexión a internet.';
+        } else if (error.message?.includes('Email rate limit')) {
+          errorMessage = 'Demasiados intentos. Por favor, espera unos minutos antes de intentar nuevamente.';
+        }
+        
+        console.error('Error en forgotPassword:', error);
+        return { data: null, error: new Error(errorMessage) };
       }
 
       return { data, error: null };
     } catch (error: unknown) {
-      return { data: null, error: error instanceof Error ? error : new Error('Error desconocido') };
+      // Manejar errores de red o conexión (especialmente "Failed to fetch")
+      let errorMessage = 'Error desconocido al enviar correo de recuperación';
+      
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        errorMessage = 'Error de conexión: No se pudo conectar con el servidor de Supabase. Esto puede deberse a:\n' +
+          '1. Las credenciales de Supabase son incorrectas o el proyecto fue eliminado\n' +
+          '2. Problemas de conexión a internet\n' +
+          '3. El servidor de Supabase no está disponible\n\n' +
+          'Por favor, verifica tus credenciales en el archivo .env.local y asegúrate de que tu proyecto de Supabase esté activo.';
+      } else if (error instanceof Error) {
+        if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch')) {
+          errorMessage = 'Error de conexión: No se pudo conectar con el servidor de Supabase. Verifica que las credenciales estén correctas y que tengas acceso a la base de datos.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      console.error('Error inesperado en forgotPassword:', error);
+      return { data: null, error: new Error(errorMessage) };
     }
   };
 
@@ -152,18 +213,31 @@ export function useAuth() {
       });
 
       if (error) {
-        throw error;
+        // Convertir el error de Supabase a Error estándar
+        const errorMessage = error.message || 'Error al actualizar contraseña';
+        return { data: null, error: new Error(errorMessage) };
       }
 
       return { data, error: null };
     } catch (error: unknown) {
-      return { data: null, error: error instanceof Error ? error : new Error('Error desconocido') };
+      // Manejar errores inesperados
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Error desconocido al actualizar contraseña';
+      return { data: null, error: new Error(errorMessage) };
     }
   };
 
   const logout = async () => {
+    // Prevenir múltiples llamadas simultáneas
+    if (loggingOut) {
+      return;
+    }
+
     try {
+      setLoggingOut(true);
       setLoading(true);
+      
       const { error } = await supabase.auth.signOut();
       if (error) {
         throw error;
@@ -173,12 +247,14 @@ export function useAuth() {
     } catch (error) {
       console.error('Error logging out:', error);
       setLoading(false);
+      setLoggingOut(false);
     }
   };
 
   return {
     user,
     loading,
+    loggingOut,
     login,
     register,
     forgotPassword,

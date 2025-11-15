@@ -2,18 +2,22 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
-import { LogOut, User, Ticket, AlertCircle, Tag, ChevronDown, X, FileText, Send } from 'lucide-react';
-import { useState } from 'react';
+import { LogOut, User, Ticket, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft } from 'lucide-react';
+import { useState, useMemo } from 'react';
 import Image from 'next/image';
 import { useToast } from '@/components/ui/Toast';
 // import ConnectionStatus from '@/components/ui/ConnectionStatus';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, loggingOut } = useAuth();
   const { 
+    tickets,
+    loading: ticketsLoading,
     createTicket, 
     uploadImage, 
-    clearError 
+    clearError,
+    refreshTickets,
+    fetchTicketResponses
   } = useTickets();
   const { addToast, ToastContainer } = useToast();
   
@@ -29,6 +33,85 @@ export default function Dashboard() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [ticketResponses, setTicketResponses] = useState<any[]>([]);
+  const [loadingResponses, setLoadingResponses] = useState(false);
+
+  // Filtrar tickets del usuario actual por estado
+  const userTickets = useMemo(() => {
+    if (!user || !tickets) return [];
+    const filtered = tickets.filter(ticket => ticket.created_by === user.id);
+    if (statusFilter === 'all') return filtered;
+    return filtered.filter(ticket => ticket.status === statusFilter);
+  }, [tickets, user, statusFilter]);
+
+  // Cargar respuestas cuando se selecciona un ticket
+  const handleTicketClick = async (ticket: Ticket) => {
+    setSelectedTicket(ticket);
+    setLoadingResponses(true);
+    try {
+      const { data } = await fetchTicketResponses(ticket.id);
+      setTicketResponses(data || []);
+    } catch (error) {
+      console.error('Error cargando respuestas:', error);
+    } finally {
+      setLoadingResponses(false);
+    }
+  };
+
+  // Formatear fecha
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('es-ES', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
+
+  // Obtener color del estado
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300';
+      case 'in_progress':
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
+      case 'resolved':
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
+      default:
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300';
+    }
+  };
+
+  // Obtener icono del estado
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <Clock className="h-4 w-4" />;
+      case 'in_progress':
+        return <Loader2 className="h-4 w-4 animate-spin" />;
+      case 'resolved':
+        return <CheckCircle className="h-4 w-4" />;
+      default:
+        return <Ticket className="h-4 w-4" />;
+    }
+  };
+
+  // Obtener texto del estado
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'Pendiente';
+      case 'in_progress':
+        return 'En Progreso';
+      case 'resolved':
+        return 'Resuelto';
+      default:
+        return status;
+    }
+  };
 
   // Etiquetas disponibles
   const availableTags = [
@@ -99,10 +182,12 @@ export default function Dashboard() {
       // Subir imagen si existe
       if (imageFile) {
         console.log('📸 Subiendo imagen...');
-        imageUrl = await uploadImage(imageFile);
-        if (!imageUrl) {
-          setError('Error al subir la imagen');
-          return;
+        try {
+          imageUrl = await uploadImage(imageFile);
+          console.log('✅ Imagen subida exitosamente:', imageUrl);
+        } catch (uploadError) {
+          console.error('Error al subir imagen:', uploadError);
+          throw uploadError; // Propagar el error para que se maneje en el catch principal
         }
       }
 
@@ -129,12 +214,22 @@ export default function Dashboard() {
       setImagePreview(null);
 
       console.log('🎉 ¡Ticket enviado exitosamente!');
+      
+      // Actualizar lista de tickets
+      await refreshTickets();
+      
       addToast({
         type: 'success',
         title: '¡Ticket enviado!',
         message: 'Tu solicitud ha sido enviada correctamente. Te contactaremos pronto.',
         duration: 5000
       });
+      
+      // Si hay un ticket seleccionado, actualizar sus respuestas también
+      if (selectedTicket) {
+        const { data } = await fetchTicketResponses(selectedTicket.id);
+        setTicketResponses(data || []);
+      }
     } catch (error: unknown) {
       console.error('💥 Error completo:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error inesperado al enviar el ticket';
@@ -195,10 +290,20 @@ export default function Dashboard() {
               
               <button
                 onClick={logout}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                disabled={loggingOut}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <LogOut className="w-4 h-4 mr-2" />
-                Cerrar Sesión
+                {loggingOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Cerrando...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Cerrar Sesión
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -206,8 +311,11 @@ export default function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Formulario de Ticket - Columna Izquierda (2/3) */}
+          <div className="lg:col-span-2">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
           {/* Welcome Section */}
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -296,7 +404,26 @@ export default function Dashboard() {
                   </div>
                 )}
 
-
+                {/* Botón Enviar Ticket - Más sutil, al nivel de la imagen */}
+                <div className="mt-6">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2 shadow-sm"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Enviando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        <span>Enviar Ticket</span>
+                      </>
+                    )}
+                  </button>
+                </div>
 
               </div>
 
@@ -332,8 +459,16 @@ export default function Dashboard() {
                           type="file"
                           accept="image/*"
                           onChange={handleImageChange}
-                          className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 dark:file:bg-blue-900/30 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50"
+                          className="hidden"
+                          id="image-upload"
                         />
+                        <label
+                          htmlFor="image-upload"
+                          className="inline-flex items-center px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors text-sm font-medium"
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          Seleccionar archivo
+                        </label>
                       </div>
                     ) : (
                       /* Preview de imagen - solo cuando hay archivo seleccionado */
@@ -407,29 +542,297 @@ export default function Dashboard() {
 
 
 
-            {/* Submit Button */}
-            <div className="pt-4">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>Enviando...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-5 w-5" />
-                    <span>Enviar Ticket</span>
-                  </>
-                )}
-              </button>
-            </div>
           </form>
+            </div>
+          </div>
 
+          {/* Mis Tickets - Columna Derecha (1/3) */}
+          <div className="lg:col-span-1">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-4">
+              {!selectedTicket ? (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
+                      <Ticket className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
+                      Mis Tickets
+                    </h3>
+                    {userTickets.length > 0 && (
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {userTickets.length}
+                      </span>
+                    )}
+                  </div>
 
+                  {/* Filtro por estado */}
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <Filter className="inline h-3 w-3 mr-1" />
+                      Filtrar por estado
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('all')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          statusFilter === 'all'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('pending')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          statusFilter === 'pending'
+                            ? 'bg-yellow-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Pendientes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('in_progress')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          statusFilter === 'in_progress'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        En Progreso
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('resolved')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          statusFilter === 'resolved'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Resueltos
+                      </button>
+                    </div>
+                  </div>
+
+                  {ticketsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
+                    </div>
+                  ) : userTickets.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Ticket className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {statusFilter === 'all' 
+                          ? 'No has enviado tickets aún'
+                          : `No tienes tickets ${getStatusText(statusFilter).toLowerCase()}`
+                        }
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[calc(100vh-350px)] overflow-y-auto pr-2">
+                      {userTickets.map((ticket) => (
+                        <button
+                          key={ticket.id}
+                          type="button"
+                          onClick={() => handleTicketClick(ticket)}
+                          className="w-full text-left border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer"
+                        >
+                      {/* Header del ticket */}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
+                              {getStatusIcon(ticket.status)}
+                              <span className="ml-1">{getStatusText(ticket.status)}</span>
+                            </span>
+                            {ticket.is_urgent && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Urgente
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatDate(ticket.created_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Descripción */}
+                      <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2 mb-2">
+                        {ticket.description}
+                      </p>
+
+                      {/* Tags */}
+                      {ticket.tags && ticket.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {ticket.tags.slice(0, 2).map((tag, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {ticket.tags.length > 2 && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                              +{ticket.tags.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                          {/* Indicador de imagen */}
+                          {ticket.image_url && (
+                            <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400">
+                              <FileText className="h-3 w-3 mr-1" />
+                              Con imagen
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Vista de detalle del ticket */
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTicket(null);
+                      setTicketResponses([]);
+                    }}
+                    className="flex items-center text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Volver a mis tickets
+                  </button>
+
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedTicket.status)}`}>
+                        {getStatusIcon(selectedTicket.status)}
+                        <span className="ml-1">{getStatusText(selectedTicket.status)}</span>
+                      </span>
+                      {selectedTicket.is_urgent && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Urgente
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                      Creado: {formatDate(selectedTicket.created_at)}
+                    </p>
+                  </div>
+
+                  {/* Descripción completa */}
+                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Descripción:</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                      {selectedTicket.description}
+                    </p>
+                  </div>
+
+                  {/* Tags */}
+                  {selectedTicket.tags && selectedTicket.tags.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Etiquetas:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedTicket.tags.map((tag, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Imagen si existe */}
+                  {selectedTicket.image_url && (
+                    <div className="mb-4">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Imagen adjunta:</p>
+                      <div className="relative">
+                        <Image
+                          src={selectedTicket.image_url}
+                          alt="Imagen del ticket"
+                          width={300}
+                          height={200}
+                          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Historial de respuestas */}
+                  <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Historial de Conversación
+                    </h4>
+
+                    {loadingResponses ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
+                      </div>
+                    ) : ticketResponses.length === 0 ? (
+                      <div className="text-center py-4">
+                        <MessageSquare className="h-8 w-8 text-gray-400 dark:text-gray-600 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Aún no hay respuestas del soporte
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {ticketResponses.map((response: any) => (
+                          <div
+                            key={response.id}
+                            className={`p-3 rounded-lg ${
+                              response.is_support_response || response.users?.role === 'support'
+                                ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-700/50 border-l-4 border-gray-400'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {response.is_support_response || response.users?.role === 'support'
+                                  ? 'Soporte'
+                                  : response.users?.full_name || 'Usuario'}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {formatDate(response.created_at)}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                              {response.message}
+                            </p>
+                            {response.image_url && (
+                              <div className="mt-2">
+                                <Image
+                                  src={response.image_url}
+                                  alt="Imagen de respuesta"
+                                  width={200}
+                                  height={150}
+                                  className="max-w-full h-auto rounded border border-gray-200 dark:border-gray-600"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </main>
       

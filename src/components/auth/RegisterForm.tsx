@@ -27,7 +27,7 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // const { register: registerUser } = useAuth();
+  const { register: registerUser } = useAuth();
 
   const {
     register,
@@ -42,17 +42,16 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     setIsSubmitting(true);
     
     try {
-      // Simulación de registro - reemplazar con tu lógica de autenticación
-      console.log('Datos de registro:', data);
+      const { error } = await registerUser(data.email, data.password, data.fullName);
       
-      // Simular delay de red
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setError('root', {
-        type: 'manual',
-        message: 'Sistema de autenticación no disponible - Supabase eliminado',
-      });
-    } catch {
+      if (error) {
+        setError('root', {
+          type: 'manual',
+          message: error instanceof Error ? error.message : 'Error desconocido',
+        });
+      }
+      // Si no hay error, la redirección se maneja en el hook
+    } catch (error: unknown) {
       setError('root', {
         type: 'manual',
         message: 'Error inesperado al registrarse',

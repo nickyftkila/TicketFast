@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   experimental: {
     // Deshabilitar características experimentales que puedan causar problemas
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.supabase.co',
+      },
+    ],
+  },
   webpack: (config) => {
     config.module.rules.push({
       test: /\.json$/,
