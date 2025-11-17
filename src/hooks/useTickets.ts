@@ -185,7 +185,10 @@ export function useTickets() {
 
   const fetchTicketResponses = async (ticketId: string) => {
     try {
-      const { data, error } = await supabase
+      console.log('🔍 fetchTicketResponses - Iniciando consulta para ticket:', ticketId);
+      
+      // Primero intentar con el join completo
+      let { data, error } = await supabase
         .from('ticket_responses')
         .select(`
           *,
@@ -198,12 +201,51 @@ export function useTickets() {
         .eq('ticket_id', ticketId)
         .order('created_at', { ascending: true });
 
+      console.log('📥 fetchTicketResponses - Resultado con join:', { data, error });
+
+      // Si hay error con el join, intentar sin el join
       if (error) {
+        console.warn('⚠️ Error con join, intentando sin join:', error);
+        const { data: dataWithoutJoin, error: errorWithoutJoin } = await supabase
+          .from('ticket_responses')
+          .select('*')
+          .eq('ticket_id', ticketId)
+          .order('created_at', { ascending: true });
+
+        console.log('📥 fetchTicketResponses - Resultado sin join:', { data: dataWithoutJoin, error: errorWithoutJoin });
+
+        if (errorWithoutJoin) {
+          console.error('❌ fetchTicketResponses - Error sin join:', errorWithoutJoin);
+          throw errorWithoutJoin;
+        }
+
+        data = dataWithoutJoin;
+        error = null;
+      }
+
+      if (error) {
+        console.error('❌ fetchTicketResponses - Error de Supabase:', error);
         throw error;
       }
 
-      return { data: data || [], error: null };
+      const responses = data || [];
+      console.log(`✅ fetchTicketResponses - ${responses.length} respuestas encontradas`);
+      
+      // Log detallado de cada respuesta
+      responses.forEach((response: any, index: number) => {
+        console.log(`  Respuesta ${index + 1}:`, {
+          id: response.id,
+          message: response.message?.substring(0, 50) + '...',
+          is_support_response: response.is_support_response,
+          user_role: response.users?.role,
+          created_by: response.created_by,
+          created_at: response.created_at
+        });
+      });
+
+      return { data: responses, error: null };
     } catch (error: unknown) {
+      console.error('💥 fetchTicketResponses - Error capturado:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       return { data: [], error: new Error(errorMessage) };
     }

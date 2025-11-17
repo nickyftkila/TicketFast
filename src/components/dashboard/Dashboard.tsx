@@ -2,8 +2,9 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
+import { supabase } from '@/lib/supabase';
 import { LogOut, User, Ticket, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useToast } from '@/components/ui/Toast';
 // import ConnectionStatus from '@/components/ui/ConnectionStatus';
@@ -38,6 +39,46 @@ export default function Dashboard() {
   const [ticketResponses, setTicketResponses] = useState<any[]>([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
 
+  // Refs para sincronizar alturas
+  const formRef = useRef<HTMLDivElement>(null);
+  const ticketsRef = useRef<HTMLDivElement>(null);
+
+  // Sincronizar altura de "Mis Tickets" con el formulario
+  useEffect(() => {
+    const syncHeights = () => {
+      if (formRef.current && ticketsRef.current) {
+        const formHeight = formRef.current.offsetHeight;
+        ticketsRef.current.style.maxHeight = `${formHeight}px`;
+      }
+    };
+
+    syncHeights();
+    window.addEventListener('resize', syncHeights);
+    
+    // Observar cambios en el formulario
+    const resizeObserver = new ResizeObserver(syncHeights);
+    if (formRef.current) {
+      resizeObserver.observe(formRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', syncHeights);
+      resizeObserver.disconnect();
+    };
+  }, [description, selectedTags, imageFile]);
+
+  // Debug: Loggear cuando cambien las respuestas
+  useEffect(() => {
+    if (selectedTicket) {
+      console.log('📋 Estado de respuestas:', {
+        ticketId: selectedTicket.id,
+        loading: loadingResponses,
+        count: ticketResponses.length,
+        responses: ticketResponses
+      });
+    }
+  }, [ticketResponses, loadingResponses, selectedTicket]);
+
   // Filtrar tickets del usuario actual por estado
   const userTickets = useMemo(() => {
     if (!user || !tickets) return [];
@@ -50,11 +91,82 @@ export default function Dashboard() {
   const handleTicketClick = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
     setLoadingResponses(true);
+    setTicketResponses([]);
     try {
-      const { data } = await fetchTicketResponses(ticket.id);
-      setTicketResponses(data || []);
+      console.log('🔍 [Dashboard] Cargando respuestas para ticket:', ticket.id);
+      
+      // Consulta directa sin join primero para verificar
+      const { data: directData, error: directError } = await supabase
+        .from('ticket_responses')
+        .select('*')
+        .eq('ticket_id', ticket.id)
+        .order('created_at', { ascending: true });
+      
+      console.log('📊 [Dashboard] Consulta directa:', { 
+        count: directData?.length || 0, 
+        data: directData, 
+        error: directError 
+      });
+      
+      if (directError) {
+        console.error('❌ [Dashboard] Error en consulta directa:', directError);
+        addToast({
+          type: 'error',
+          title: 'Error al cargar respuestas',
+          message: directError.message || 'No se pudieron cargar las respuestas del ticket',
+          duration: 5000
+        });
+        setTicketResponses([]);
+        return;
+      }
+      
+      // Si hay datos, intentar obtener la información del usuario
+      if (directData && directData.length > 0) {
+        console.log(`✅ [Dashboard] Se encontraron ${directData.length} respuestas`);
+        
+        // Intentar obtener usuarios para cada respuesta
+        const responsesWithUsers = await Promise.all(
+          directData.map(async (response: any) => {
+            try {
+              const { data: userData } = await supabase
+                .from('users')
+                .select('full_name, email, role')
+                .eq('id', response.created_by)
+                .single();
+              
+              return {
+                ...response,
+                users: userData || null
+              };
+            } catch (err) {
+              console.warn('⚠️ [Dashboard] No se pudo obtener usuario para respuesta:', response.id);
+              return response;
+            }
+          })
+        );
+        
+        console.log('📥 [Dashboard] Respuestas con usuarios:', responsesWithUsers);
+        setTicketResponses(responsesWithUsers);
+      } else {
+        console.log('ℹ️ [Dashboard] No hay respuestas para este ticket');
+        setTicketResponses([]);
+      }
+      
+      // También intentar con el método original por si acaso
+      const { data, error } = await fetchTicketResponses(ticket.id);
+      if (!error && data && data.length > 0) {
+        console.log('✅ [Dashboard] Método original también funcionó');
+        setTicketResponses(data);
+      }
     } catch (error) {
-      console.error('Error cargando respuestas:', error);
+      console.error('💥 [Dashboard] Error cargando respuestas:', error);
+      addToast({
+        type: 'error',
+        title: 'Error al cargar respuestas',
+        message: error instanceof Error ? error.message : 'Error desconocido al cargar respuestas',
+        duration: 5000
+      });
+      setTicketResponses([]);
     } finally {
       setLoadingResponses(false);
     }
@@ -315,7 +427,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Formulario de Ticket - Columna Izquierda (2/3) */}
           <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+            <div ref={formRef} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 w-full">
           {/* Welcome Section */}
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -338,9 +450,9 @@ export default function Dashboard() {
           {/* Ticket Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Description and Tags Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
               {/* Tags - Takes 1/3 of the space (LEFT) */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 flex flex-col">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   <Tag className="inline h-4 w-4 mr-2" />
                   Selecciona etiquetas
@@ -404,8 +516,8 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Botón Enviar Ticket - Más sutil, al nivel de la imagen */}
-                <div className="mt-6">
+                {/* Botón Enviar Ticket - Alineado con la sección de imagen */}
+                <div className="mt-auto pt-6">
                   <button
                     type="submit"
                     disabled={isSubmitting}
@@ -428,7 +540,7 @@ export default function Dashboard() {
               </div>
 
               {/* Description - Takes 2/3 of the space (RIGHT) */}
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 flex flex-col">
                 <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   <FileText className="inline h-4 w-4 mr-2" />
                   Describe el problema
@@ -471,66 +583,37 @@ export default function Dashboard() {
                         </label>
                       </div>
                     ) : (
-                      /* Preview de imagen - solo cuando hay archivo seleccionado */
-                      <div className="space-y-2">
-                        {/* Nombre del archivo con botón X superpuesto */}
-                        <div className="relative inline-block">
-                          <div className="bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 pr-8">
-                            <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                              {imageFile.name}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={removeImage}
-                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-lg"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                      /* Nombre del archivo con botón X - solo cuando hay archivo seleccionado */
+                      <div className="relative inline-block">
+                        <div className="bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 pr-8">
+                          <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">
+                            {imageFile.name}
+                          </span>
                         </div>
-                        
-                        {/* Preview de la imagen */}
-                        {imagePreview && (
-                          <div className="relative">
-                            <Image
-                              src={imagePreview}
-                              alt="Preview"
-                              width={200}
-                              height={150}
-                              className="max-w-full h-auto max-h-48 rounded-lg border border-gray-200 dark:border-gray-600 object-cover"
-                            />
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={removeImage}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-lg"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
                     )}
                   </div>
 
                   {/* Urgency Section - Columna derecha (1/3 del espacio) */}
                   <div className="lg:col-span-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <AlertCircle className="h-4 w-4 text-orange-500" />
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isUrgent}
+                        onChange={(e) => setIsUrgent(e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                         ¿Es urgente?
                       </span>
-                    </div>
-                    <div className="ml-6">
-                      <label className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={isUrgent}
-                          onChange={(e) => setIsUrgent(e.target.checked)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          Marcar como prioritario
-                        </span>
-                      </label>
-                      {isUrgent && (
-                        <p className="mt-2 text-sm text-orange-600 dark:text-orange-400 font-medium">
-                          ⚠️ Este ticket será marcado como prioritario
-                        </p>
-                      )}
-                    </div>
+                    </label>
                   </div>
                 </div>
 
@@ -548,7 +631,7 @@ export default function Dashboard() {
 
           {/* Mis Tickets - Columna Derecha (1/3) */}
           <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-4">
+            <div ref={ticketsRef} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full flex flex-col overflow-hidden">
               {!selectedTicket ? (
                 <>
                   <div className="flex items-center justify-between mb-4">
@@ -618,11 +701,11 @@ export default function Dashboard() {
                   </div>
 
                   {ticketsLoading ? (
-                    <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center justify-center flex-1 py-8">
                       <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
                     </div>
                   ) : userTickets.length === 0 ? (
-                    <div className="text-center py-8">
+                    <div className="text-center flex-1 flex flex-col items-center justify-center py-8">
                       <Ticket className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {statusFilter === 'all' 
@@ -632,7 +715,7 @@ export default function Dashboard() {
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-[calc(100vh-350px)] overflow-y-auto pr-2">
+                    <div className="space-y-3 flex-1 overflow-y-auto pr-2 min-h-0">
                       {userTickets.map((ticket) => (
                         <button
                           key={ticket.id}
@@ -699,20 +782,20 @@ export default function Dashboard() {
                 </>
               ) : (
                 /* Vista de detalle del ticket */
-                <div>
+                <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-2">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedTicket(null);
                       setTicketResponses([]);
                     }}
-                    className="flex items-center text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
+                    className="flex items-center text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors flex-shrink-0"
                   >
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Volver a mis tickets
                   </button>
 
-                  <div className="mb-4">
+                  <div className="mb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedTicket.status)}`}>
                         {getStatusIcon(selectedTicket.status)}
@@ -731,7 +814,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Descripción completa */}
-                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg flex-shrink-0">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Descripción:</p>
                     <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
                       {selectedTicket.description}
@@ -740,7 +823,7 @@ export default function Dashboard() {
 
                   {/* Tags */}
                   {selectedTicket.tags && selectedTicket.tags.length > 0 && (
-                    <div className="mb-4">
+                    <div className="mb-4 flex-shrink-0">
                       <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Etiquetas:</p>
                       <div className="flex flex-wrap gap-2">
                         {selectedTicket.tags.map((tag, idx) => (
@@ -757,7 +840,7 @@ export default function Dashboard() {
 
                   {/* Imagen si existe */}
                   {selectedTicket.image_url && (
-                    <div className="mb-4">
+                    <div className="mb-4 flex-shrink-0">
                       <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Imagen adjunta:</p>
                       <div className="relative">
                         <Image
@@ -772,29 +855,39 @@ export default function Dashboard() {
                   )}
 
                   {/* Historial de respuestas */}
-                  <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-                    <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center">
-                      <MessageSquare className="h-4 w-4 mr-2" />
-                      Historial de Conversación
-                    </h4>
+                  <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4 flex-shrink-0">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center">
+                        <MessageSquare className="h-4 w-4 mr-2" />
+                        Historial de Conversación
+                      </h4>
+                      {ticketResponses.length > 0 && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                          {ticketResponses.length} {ticketResponses.length === 1 ? 'respuesta' : 'respuestas'}
+                        </span>
+                      )}
+                    </div>
 
                     {loadingResponses ? (
-                      <div className="flex items-center justify-center py-4">
+                      <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
                       </div>
                     ) : ticketResponses.length === 0 ? (
-                      <div className="text-center py-4">
+                      <div className="text-center py-8">
                         <MessageSquare className="h-8 w-8 text-gray-400 dark:text-gray-600 mx-auto mb-2" />
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                           Aún no hay respuestas del soporte
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          El equipo de soporte responderá pronto
                         </p>
                       </div>
                     ) : (
-                      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                        {ticketResponses.map((response: any) => (
+                      <div className="space-y-3">
+                        {ticketResponses.map((response: any, index: number) => (
                           <div
-                            key={response.id}
-                            className={`p-3 rounded-lg ${
+                            key={response.id || index}
+                            className={`p-3 rounded-lg mb-3 ${
                               response.is_support_response || response.users?.role === 'support'
                                 ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500'
                                 : 'bg-gray-50 dark:bg-gray-700/50 border-l-4 border-gray-400'
@@ -811,8 +904,13 @@ export default function Dashboard() {
                               </span>
                             </div>
                             <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                              {response.message}
+                              {response.message || '(Sin mensaje)'}
                             </p>
+                            {!response.message && (
+                              <p className="text-xs text-gray-400 dark:text-gray-500 italic mt-1">
+                                Esta respuesta no tiene contenido de texto
+                              </p>
+                            )}
                             {response.image_url && (
                               <div className="mt-2">
                                 <Image
