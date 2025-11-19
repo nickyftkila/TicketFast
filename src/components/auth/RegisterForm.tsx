@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { User, Mail, Lock, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
-// import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 const registerSchema = z.object({
   full_name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
@@ -42,7 +42,7 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     setIsSubmitting(true);
     
     try {
-      const { error } = await registerUser(data.email, data.password, data.fullName);
+      const { error } = await registerUser(data.email, data.password, data.full_name);
       
       if (error) {
         setError('root', {
@@ -52,6 +52,7 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       }
       // Si no hay error, la redirección se maneja en el hook
     } catch (error: unknown) {
+      console.error('Error inesperado al registrarse:', error);
       setError('root', {
         type: 'manual',
         message: 'Error inesperado al registrarse',

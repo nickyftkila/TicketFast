@@ -46,6 +46,7 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
       }
       // Si no hay error, la redirección se maneja en el hook
     } catch (error: unknown) {
+      console.error('Error inesperado al iniciar sesión:', error);
       setError('root', {
         type: 'manual',
         message: 'Error inesperado al iniciar sesión',

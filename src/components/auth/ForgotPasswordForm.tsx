@@ -46,6 +46,7 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
         setIsSuccess(true);
       }
     } catch (error: unknown) {
+      console.error('Error inesperado en recuperación de contraseña:', error);
       setError('root', {
         type: 'manual',
         message: 'Error inesperado al enviar email de recuperación',

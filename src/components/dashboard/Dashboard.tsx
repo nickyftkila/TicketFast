@@ -2,8 +2,10 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets } from '@/hooks/useTickets';
+import type { TicketResponseWithUser } from '@/hooks/useTickets';
 import { supabase } from '@/lib/supabase';
-import { LogOut, User, Ticket, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft } from 'lucide-react';
+import type { Ticket as TicketType } from '@/lib/supabase';
+import { LogOut, User, Ticket as TicketIcon, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft, PlayCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useToast } from '@/components/ui/Toast';
@@ -31,12 +33,11 @@ export default function Dashboard() {
   const [description, setDescription] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-  const [ticketResponses, setTicketResponses] = useState<any[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<TicketType | null>(null);
+  const [ticketResponses, setTicketResponses] = useState<TicketResponseWithUser[]>([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
 
   // Refs para sincronizar alturas
@@ -88,7 +89,7 @@ export default function Dashboard() {
   }, [tickets, user, statusFilter]);
 
   // Cargar respuestas cuando se selecciona un ticket
-  const handleTicketClick = async (ticket: Ticket) => {
+  const handleTicketClick = async (ticket: TicketType) => {
     setSelectedTicket(ticket);
     setLoadingResponses(true);
     setTicketResponses([]);
@@ -123,23 +124,23 @@ export default function Dashboard() {
       // Si hay datos, intentar obtener la información del usuario
       if (directData && directData.length > 0) {
         console.log(`✅ [Dashboard] Se encontraron ${directData.length} respuestas`);
-        
-        // Intentar obtener usuarios para cada respuesta
+
+        const responses = (directData as TicketResponseWithUser[]) ?? [];
         const responsesWithUsers = await Promise.all(
-          directData.map(async (response: any) => {
+          responses.map(async (response): Promise<TicketResponseWithUser> => {
             try {
               const { data: userData } = await supabase
                 .from('users')
                 .select('full_name, email, role')
                 .eq('id', response.created_by)
                 .single();
-              
+
               return {
                 ...response,
                 users: userData || null
               };
             } catch (err) {
-              console.warn('⚠️ [Dashboard] No se pudo obtener usuario para respuesta:', response.id);
+              console.warn('⚠️ [Dashboard] No se pudo obtener usuario para respuesta:', response.id, err);
               return response;
             }
           })
@@ -203,11 +204,11 @@ export default function Dashboard() {
       case 'pending':
         return <Clock className="h-4 w-4" />;
       case 'in_progress':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
+        return <PlayCircle className="h-4 w-4" />;
       case 'resolved':
         return <CheckCircle className="h-4 w-4" />;
       default:
-        return <Ticket className="h-4 w-4" />;
+        return <TicketIcon className="h-4 w-4" />;
     }
   };
 
@@ -250,17 +251,11 @@ export default function Dashboard() {
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
   const removeImage = () => {
     setImageFile(null);
-    setImagePreview(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -323,7 +318,6 @@ export default function Dashboard() {
       setSelectedTags([]);
       setIsUrgent(false);
       setImageFile(null);
-      setImagePreview(null);
 
       console.log('🎉 ¡Ticket enviado exitosamente!');
       
@@ -376,7 +370,7 @@ export default function Dashboard() {
               <div className="flex-shrink-0">
                 <div className="flex items-center">
                   <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
-                    <Ticket className="w-5 h-5 text-white" />
+                    <TicketIcon className="w-5 h-5 text-white" />
                   </div>
                   <h1 className="text-xl font-bold text-gray-900 dark:text-white">
                     TicketFast
@@ -636,7 +630,7 @@ export default function Dashboard() {
                 <>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                      <Ticket className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
+                      <TicketIcon className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
                       Mis Tickets
                     </h3>
                     {userTickets.length > 0 && (
@@ -706,7 +700,7 @@ export default function Dashboard() {
                     </div>
                   ) : userTickets.length === 0 ? (
                     <div className="text-center flex-1 flex flex-col items-center justify-center py-8">
-                      <Ticket className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
+                      <TicketIcon className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {statusFilter === 'all' 
                           ? 'No has enviado tickets aún'
@@ -884,7 +878,7 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {ticketResponses.map((response: any, index: number) => (
+                        {ticketResponses.map((response, index) => (
                           <div
                             key={response.id || index}
                             className={`p-3 rounded-lg mb-3 ${

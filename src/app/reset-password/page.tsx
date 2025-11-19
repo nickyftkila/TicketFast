@@ -72,6 +72,7 @@ export default function ResetPassword() {
         }, 3000);
       }
     } catch (error: unknown) {
+      console.error('Error al actualizar la contraseña:', error);
       setMessage('Error al actualizar la contraseña');
     } finally {
       setIsLoading(false);

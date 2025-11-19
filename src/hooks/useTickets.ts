@@ -3,8 +3,22 @@
 import { useState, useEffect } from 'react';
 import { supabase, Ticket, TicketResponse } from '@/lib/supabase';
 
+export interface TicketUserInfo {
+  full_name?: string | null;
+  email?: string | null;
+  role?: 'user' | 'support' | null;
+}
+
+export type TicketWithUser = Ticket & {
+  users?: TicketUserInfo | null;
+};
+
+export type TicketResponseWithUser = TicketResponse & {
+  users?: TicketUserInfo | null;
+};
+
 export function useTickets() {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<TicketWithUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +42,7 @@ export function useTickets() {
         throw error;
       }
 
-      setTickets(data || []);
+      setTickets((data as TicketWithUser[] | null) || []);
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'Error desconocido');
       console.error('Error fetching tickets:', error);
@@ -125,8 +139,8 @@ export function useTickets() {
       console.error('❌ Error de Supabase Storage:', error);
       console.error('Detalles del error:', {
         message: error.message,
-        statusCode: error.statusCode,
-        error: error.error
+        statusCode: (error as { statusCode?: number }).statusCode,
+        error: (error as { error?: unknown }).error
       });
       
       // Mensajes de error más descriptivos
@@ -228,11 +242,11 @@ export function useTickets() {
         throw error;
       }
 
-      const responses = data || [];
+      const responses = ((data as TicketResponseWithUser[] | null) || []);
       console.log(`✅ fetchTicketResponses - ${responses.length} respuestas encontradas`);
       
       // Log detallado de cada respuesta
-      responses.forEach((response: any, index: number) => {
+      responses.forEach((response, index) => {
         console.log(`  Respuesta ${index + 1}:`, {
           id: response.id,
           message: response.message?.substring(0, 50) + '...',

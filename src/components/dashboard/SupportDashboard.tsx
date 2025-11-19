@@ -1,19 +1,18 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
-import { useTickets } from '@/hooks/useTickets';
+import { useTickets, TicketWithUser, TicketResponseWithUser } from '@/hooks/useTickets';
 import { useToast } from '@/components/ui/Toast';
-import { Ticket, TicketResponse } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+type TicketStatus = 'pending' | 'in_progress' | 'resolved';
+
 import { 
   Ticket as TicketIcon, 
   LogOut, 
   User, 
-  Search, 
-  Filter, 
   Clock, 
   CheckCircle, 
   Loader2, 
@@ -23,7 +22,8 @@ import {
   FileText,
   Tag,
   Image as ImageIcon,
-  ChevronDown
+  ChevronDown,
+  PlayCircle
 } from 'lucide-react';
 
 export default function SupportDashboard() {
@@ -31,12 +31,12 @@ export default function SupportDashboard() {
   const { tickets, loading, updateTicketStatus, refreshTickets, fetchTicketResponses } = useTickets();
   const { addToast, ToastContainer } = useToast();
 
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-  const [ticketResponses, setTicketResponses] = useState<any[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<TicketWithUser | null>(null);
+  const [ticketResponses, setTicketResponses] = useState<TicketResponseWithUser[]>([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | TicketStatus>('all');
+  const [searchQuery] = useState('');
   const [responseMessage, setResponseMessage] = useState('');
   const [sendingResponse, setSendingResponse] = useState(false);
   const [responseImage, setResponseImage] = useState<File | null>(null);
@@ -73,22 +73,21 @@ export default function SupportDashboard() {
 
   // Filtrar tickets
   const filteredTickets = useMemo(() => {
-    let filtered = tickets;
+    let filtered: TicketWithUser[] = tickets;
 
-    // Filtro por estado
     if (statusFilter !== 'all') {
       filtered = filtered.filter(t => t.status === statusFilter);
     }
 
-    // Búsqueda
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(t => 
-        t.description.toLowerCase().includes(query) ||
-        t.tags.some(tag => tag.toLowerCase().includes(query)) ||
-        (t as any).users?.full_name?.toLowerCase().includes(query) ||
-        (t as any).users?.email?.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter((t) => {
+        const matchesDescription = t.description.toLowerCase().includes(query);
+        const matchesTags = t.tags.some(tag => tag.toLowerCase().includes(query));
+        const matchesName = t.users?.full_name?.toLowerCase().includes(query) ?? false;
+        const matchesEmail = t.users?.email?.toLowerCase().includes(query) ?? false;
+        return matchesDescription || matchesTags || matchesName || matchesEmail;
+      });
     }
 
     return filtered;
@@ -111,10 +110,10 @@ export default function SupportDashboard() {
         setSelectedTicket(updatedTicket);
       }
     }
-  }, [tickets]);
+  }, [tickets, selectedTicket]);
 
   // Cargar detalles del ticket
-  const handleTicketClick = async (ticket: Ticket) => {
+  const handleTicketClick = async (ticket: TicketWithUser) => {
     setSelectedTicket(ticket);
     setLoadingResponses(true);
     try {
@@ -128,7 +127,7 @@ export default function SupportDashboard() {
   };
 
   // Cambiar estado del ticket
-  const handleStatusChange = async (ticketId: string, newStatus: 'pending' | 'in_progress' | 'resolved') => {
+  const handleStatusChange = async (ticketId: string, newStatus: TicketStatus) => {
     // Prevenir múltiples cambios simultáneos
     if (updatingStatus) return;
 
@@ -232,6 +231,7 @@ export default function SupportDashboard() {
         duration: 3000
       });
     } catch (error) {
+      console.error('Error al enviar respuesta de soporte:', error);
       addToast({
         type: 'error',
         title: 'Error',
@@ -287,7 +287,7 @@ export default function SupportDashboard() {
       case 'pending':
         return <Clock className="h-4 w-4" />;
       case 'in_progress':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
+        return <PlayCircle className="h-4 w-4" />;
       case 'resolved':
         return <CheckCircle className="h-4 w-4" />;
       default:
@@ -363,116 +363,58 @@ export default function SupportDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* Header Section */}
-        <div className="mb-4 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2">
-            Panel de Soporte
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
-            Gestiona y responde tickets de manera eficiente
-          </p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 sm:p-4 lg:p-5 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 truncate">Total</p>
-                <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mt-1">{stats.total}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0 ml-2">
-                <TicketIcon className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 sm:p-4 lg:p-5 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 truncate">Pendientes</p>
-                <p className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{stats.pending}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center flex-shrink-0 ml-2">
-                <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 sm:p-4 lg:p-5 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 truncate">En Progreso</p>
-                <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats.inProgress}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0 ml-2">
-                <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 sm:p-4 lg:p-5 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 truncate">Urgentes</p>
-                <p className="text-xl sm:text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">{stats.urgent}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center flex-shrink-0 ml-2">
-                <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Chart */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6 border border-gray-200 dark:border-gray-700">
-          <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">
-            Distribución de Estados
-          </h2>
-          <div className="w-full h-48 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={ticketStats}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={isMobile ? 50 : 80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {ticketStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend 
-                  wrapperStyle={{ fontSize: isMobile ? '10px' : '12px' }}
-                  iconSize={isMobile ? 8 : 12}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
         {/* Tickets List and Detail */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Tickets List */}
-          <aside className="lg:col-span-1 order-2 lg:order-1">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-              {/* Search and Filters */}
-              <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="relative mb-3 sm:mb-4">
-                  <Search className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar tickets..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+          {/* Chart - Left Side */}
+          <div className="lg:col-span-2 order-1">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-gray-700">
+              <h2 className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white mb-2 sm:mb-3 text-center">
+                Distribución de Estados
+              </h2>
+              <div className="flex items-center gap-3 sm:gap-4">
+                {/* Gráfico circular a la izquierda */}
+                <div className="flex-shrink-0 w-28 sm:w-36 h-28 sm:h-36">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={ticketStats}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={isMobile ? 30 : 40}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {ticketStats.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
+                
+                {/* Estados a la derecha */}
+                <div className="flex-1 flex flex-col justify-center gap-2">
+                  {ticketStats.map((entry, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                        {entry.name} ({entry.value})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
+            {/* Search and Filters + Tickets List */}
+            <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              {/* Filters */}
+              <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
                   <button
                     onClick={() => setStatusFilter('all')}
@@ -518,7 +460,7 @@ export default function SupportDashboard() {
               </div>
 
               {/* Tickets List */}
-              <div className="p-3 sm:p-4 max-h-[calc(100vh-400px)] sm:max-h-[calc(100vh-500px)] overflow-y-auto">
+              <div className="p-3 sm:p-4 max-h-[calc(100vh-350px)] overflow-y-auto">
                 {loading ? (
                   <div className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-2" />
@@ -537,70 +479,46 @@ export default function SupportDashboard() {
                       <button
                         key={ticket.id}
                         onClick={() => handleTicketClick(ticket)}
-                        className={`w-full text-left p-5 rounded-xl border-2 transition-all shadow-sm hover:shadow-md min-h-[160px] flex flex-col ${
+                        className={`w-full text-left p-3 rounded-lg border transition-all hover:shadow-sm ${
                           selectedTicket?.id === ticket.id
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-500 shadow-md'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-500'
                             : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
                         }`}
                       >
-                        {/* Header con usuario y estado */}
-                        <div className="flex items-start justify-between mb-4 flex-shrink-0">
-                          <div className="flex-1 min-w-0 pr-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center flex-shrink-0">
-                                <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-base font-semibold text-gray-900 dark:text-white truncate mb-1">
-                                  {(ticket as any).users?.full_name || 'Usuario'}
-                                </p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                  {formatDate(ticket.created_at)}
-                                </p>
-                              </div>
+                        {/* Header compacto */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                              <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {ticket.users?.full_name || 'Usuario'}
+                              </p>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {ticket.is_urgent && (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 whitespace-nowrap">
-                                <AlertCircle className="h-3.5 w-3.5 mr-1" />
-                                Urgente
-                              </span>
+                              <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                             )}
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(ticket.status)}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getStatusColor(ticket.status)}`}>
                               {getStatusIcon(ticket.status)}
-                              <span className="ml-1.5">{getStatusText(ticket.status)}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Descripción completa */}
-                        <div className="mb-4 flex-1 min-h-[56px]">
-                          <p className="text-base text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3 break-words">
-                            {ticket.description}
-                          </p>
-                        </div>
+                        {/* Descripción resumida */}
+                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
+                          {ticket.description}
+                        </p>
 
-                        {/* Tags e indicadores */}
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-600 flex-shrink-0 gap-2">
-                          <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-                            {ticket.tags.slice(0, 2).map((tag, idx) => (
-                              <span key={idx} className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                                <Tag className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
-                                <span className="truncate max-w-[100px] sm:max-w-none">{tag}</span>
-                              </span>
-                            ))}
-                            {ticket.tags.length > 2 && (
-                              <span className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                +{ticket.tags.length - 2}
-                              </span>
-                            )}
-                          </div>
-                          {ticket.image_url && (
-                            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
-                              <ImageIcon className="h-4 w-4 mr-1.5" />
-                              <span className="hidden sm:inline">Imagen</span>
-                            </div>
+                        {/* Fecha y tag principal */}
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                          <span>{formatDate(ticket.created_at)}</span>
+                          {ticket.tags.length > 0 && (
+                            <span className="text-blue-600 dark:text-blue-400">
+                              {ticket.tags[0]}
+                            </span>
                           )}
                         </div>
                       </button>
@@ -609,229 +527,271 @@ export default function SupportDashboard() {
                 )}
               </div>
             </div>
-          </aside>
+          </div>
 
           {/* Ticket Detail */}
-          <main className="lg:col-span-2 order-1 lg:order-2">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          <main className="lg:col-span-3 order-1 lg:order-2">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 h-[calc(100vh-120px)] flex flex-col overflow-hidden">
               {!selectedTicket ? (
-                <div className="p-8 sm:p-12 text-center">
-                  <TicketIcon className="h-12 w-12 sm:h-16 sm:w-16 text-gray-400 dark:text-gray-600 mx-auto mb-3 sm:mb-4" />
-                  <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    Selecciona un ticket
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 px-4">
-                    Elige un ticket de la lista para ver sus detalles y responder
-                  </p>
+                <div className="flex-1 flex items-center justify-center p-8 sm:p-12 text-center">
+                  <div>
+                    <TicketIcon className="h-12 w-12 sm:h-16 sm:w-16 text-gray-400 dark:text-gray-600 mx-auto mb-3 sm:mb-4" />
+                    <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      Selecciona un ticket
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 px-4">
+                      Elige un ticket de la lista para ver sus detalles y responder
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <div className="p-4 sm:p-6">
-                  {/* Header */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-                        <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
-                          Ticket #{selectedTicket.id.slice(-8)}
-                        </h2>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(selectedTicket.status)}`}>
-                          {getStatusIcon(selectedTicket.status)}
-                          <span className="ml-1">{getStatusText(selectedTicket.status)}</span>
-                        </span>
-                        {selectedTicket.is_urgent && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 flex-shrink-0">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Urgente
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                        <span className="truncate">Por: {(selectedTicket as any).users?.full_name || 'Usuario'}</span>
-                        <span className="hidden sm:inline">•</span>
-                        <span className="whitespace-nowrap">{formatDate(selectedTicket.created_at)}</span>
+                <div className="flex flex-col h-full overflow-hidden">
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                    {/* Header compacto */}
+                    <div className="space-y-2 pb-3 border-b border-gray-200 dark:border-gray-700">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+                              Ticket #{selectedTicket.id.slice(-8)}
+                            </h1>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedTicket.status)}`}>
+                                {getStatusIcon(selectedTicket.status)}
+                                <span className="ml-1.5">{getStatusText(selectedTicket.status)}</span>
+                              </span>
+                              {selectedTicket.is_urgent && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  Urgente
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                            <div className="flex items-center gap-1.5">
+                              <User className="h-3 w-3" />
+                              <span>{selectedTicket.users?.full_name || 'Usuario'}</span>
+                            </div>
+                            <span>•</span>
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="h-3 w-3" />
+                              <span>{formatDate(selectedTicket.created_at)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Change Dropdown */}
+                        <div className="relative flex-shrink-0">
+                          <select
+                            value={selectedTicket.status}
+                            onChange={(e) => handleStatusChange(selectedTicket.id, e.target.value as TicketStatus)}
+                            disabled={updatingStatus}
+                            className="appearance-none bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
+                          >
+                            <option value="pending">Pendiente</option>
+                            <option value="in_progress">En Progreso</option>
+                            <option value="resolved">Resuelto</option>
+                          </select>
+                          {updatingStatus ? (
+                            <Loader2 className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin pointer-events-none" />
+                          ) : (
+                            <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Status Change Dropdown */}
-                    <div className="relative w-full sm:w-auto flex-shrink-0">
-                      <select
-                        value={selectedTicket.status}
-                        onChange={(e) => handleStatusChange(selectedTicket.id, e.target.value as any)}
-                        disabled={updatingStatus}
-                        className="w-full sm:w-auto appearance-none bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <option value="pending">Pendiente</option>
-                        <option value="in_progress">En Progreso</option>
-                        <option value="resolved">Resuelto</option>
-                      </select>
-                      {updatingStatus ? (
-                        <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin pointer-events-none" />
+                    {/* Description compacta */}
+                    <div className="space-y-2">
+                      <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        Descripción
+                      </h2>
+                      <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <p className="text-sm text-gray-900 dark:text-white leading-relaxed whitespace-pre-wrap break-words">
+                          {selectedTicket.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Tags compactos */}
+                    {selectedTicket.tags && selectedTicket.tags.length > 0 && (
+                      <div className="space-y-2">
+                        <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                          <Tag className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          Etiquetas
+                        </h2>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedTicket.tags.map((tag, idx) => (
+                            <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                              <Tag className="h-3 w-3 mr-1.5" />
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Image compacta */}
+                    {selectedTicket.image_url && (
+                      <div className="space-y-2">
+                        <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                          <ImageIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          Imagen adjunta
+                        </h2>
+                        <div className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700/50">
+                          <Image
+                            src={selectedTicket.image_url}
+                            alt="Imagen del ticket"
+                            width={500}
+                            height={300}
+                            className="w-full h-auto object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Conversation compacta */}
+                    <div className="space-y-3">
+                      <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        Conversación
+                      </h2>
+
+                      {loadingResponses ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
+                        </div>
+                      ) : ticketResponses.length === 0 ? (
+                        <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
+                          <MessageSquare className="h-8 w-8 text-gray-400 dark:text-gray-600 mx-auto mb-2" />
+                          <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Aún no hay respuestas</p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Sé el primero en responder</p>
+                        </div>
                       ) : (
-                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                        <div className="space-y-3">
+                          {ticketResponses.map((response) => (
+                            <div
+                              key={response.id}
+                              className={`p-3 rounded-lg shadow-sm ${
+                                response.is_support_response || response.users?.role === 'support'
+                                  ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                                  : 'bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                                    response.is_support_response || response.users?.role === 'support'
+                                      ? 'bg-blue-600 dark:bg-blue-500'
+                                      : 'bg-gray-400 dark:bg-gray-600'
+                                  }`}>
+                                    <User className="h-3 w-3 text-white" />
+                                  </div>
+                                  <span className="font-medium text-sm text-gray-900 dark:text-white">
+                                    {response.is_support_response || response.users?.role === 'support'
+                                      ? 'Soporte Técnico'
+                                      : response.users?.full_name || 'Usuario'}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  {formatDate(response.created_at)}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap break-words mb-2">
+                                {response.message}
+                              </p>
+                              {response.image_url && (
+                                <div className="mt-2 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600">
+                                  <Image
+                                    src={response.image_url}
+                                    alt="Imagen de respuesta"
+                                    width={250}
+                                    height={150}
+                                    className="w-full h-auto"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Description */}
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Descripción</h3>
-                    <div className="p-3 sm:p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <p className="text-xs sm:text-sm text-gray-900 dark:text-white whitespace-pre-wrap break-words">
-                        {selectedTicket.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Tags */}
-                  {selectedTicket.tags && selectedTicket.tags.length > 0 && (
-                    <div className="mb-4 sm:mb-6">
-                      <h3 className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Etiquetas</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedTicket.tags.map((tag, idx) => (
-                          <span key={idx} className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
-                            <Tag className="h-3 w-3 mr-1 flex-shrink-0" />
-                            <span className="truncate max-w-[150px] sm:max-w-none">{tag}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Image */}
-                  {selectedTicket.image_url && (
-                    <div className="mb-4 sm:mb-6">
-                      <h3 className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Imagen adjunta</h3>
-                      <div className="relative">
-                        <Image
-                          src={selectedTicket.image_url}
-                          alt="Imagen del ticket"
-                          width={400}
-                          height={300}
-                          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Conversation */}
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 sm:mb-4 flex items-center">
-                      <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
-                      Conversación
+                  {/* Response Form compacto */}
+                  <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-1.5">
+                      <Send className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      Responder
                     </h3>
-
-                    {loadingResponses ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
-                      </div>
-                    ) : ticketResponses.length === 0 ? (
-                      <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                        <MessageSquare className="h-8 w-8 text-gray-400 dark:text-gray-600 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Aún no hay respuestas</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 sm:space-y-3 max-h-48 sm:max-h-64 overflow-y-auto pr-2">
-                        {ticketResponses.map((response: any) => (
-                          <div
-                            key={response.id}
-                            className={`p-3 sm:p-4 rounded-lg ${
-                              response.is_support_response || response.users?.role === 'support'
-                                ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500'
-                                : 'bg-gray-50 dark:bg-gray-700/50 border-l-4 border-gray-400'
-                            }`}
-                          >
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0 mb-2">
-                              <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                                {response.is_support_response || response.users?.role === 'support'
-                                  ? 'Soporte'
-                                  : response.users?.full_name || 'Usuario'}
-                              </span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                {formatDate(response.created_at)}
-                              </span>
-                            </div>
-                            <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words mb-2">
-                              {response.message}
-                            </p>
-                            {response.image_url && (
-                              <div className="mt-2">
+                    <div className="space-y-3">
+                      <textarea
+                        value={responseMessage}
+                        onChange={(e) => setResponseMessage(e.target.value)}
+                        placeholder="Escribe tu respuesta aquí..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-all"
+                      />
+                      
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          {responseImagePreview ? (
+                            <div className="relative inline-block">
+                              <div className="relative rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
                                 <Image
-                                  src={response.image_url}
-                                  alt="Imagen de respuesta"
-                                  width={200}
-                                  height={150}
-                                  className="max-w-full h-auto rounded border border-gray-200 dark:border-gray-600"
+                                  src={responseImagePreview}
+                                  alt="Preview"
+                                  width={150}
+                                  height={100}
+                                  className="max-w-full h-auto"
                                 />
                               </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                              <button
+                                onClick={() => {
+                                  setResponseImage(null);
+                                  setResponseImagePreview(null);
+                                }}
+                                className="absolute -top-1.5 -right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center shadow-md transition-colors"
+                              >
+                                <span className="text-xs font-bold">×</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                              <ImageIcon className="h-4 w-4 mr-1.5" />
+                              <span className="text-sm font-medium">Adjuntar imagen</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleResponseImageChange}
+                                className="hidden"
+                                id="response-image"
+                              />
+                            </label>
+                          )}
+                        </div>
 
-                  {/* Response Form */}
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-3 sm:pt-4">
-                    <h3 className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 sm:mb-3">Responder</h3>
-                    <textarea
-                      value={responseMessage}
-                      onChange={(e) => setResponseMessage(e.target.value)}
-                      placeholder="Escribe tu respuesta..."
-                      rows={3}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-3"
-                    />
-                    
-                    {responseImagePreview ? (
-                      <div className="mb-3 relative inline-block">
-                        <Image
-                          src={responseImagePreview}
-                          alt="Preview"
-                          width={150}
-                          height={100}
-                          className="rounded-lg border border-gray-200 dark:border-gray-600 max-w-full"
-                        />
                         <button
-                          onClick={() => {
-                            setResponseImage(null);
-                            setResponseImagePreview(null);
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 w-6 h-6 flex items-center justify-center"
+                          onClick={handleSendResponse}
+                          disabled={!responseMessage.trim() || sendingResponse}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-all shadow-sm hover:shadow-md disabled:shadow-none flex items-center gap-1.5 min-w-[140px] justify-center"
                         >
-                          <span className="text-xs">×</span>
+                          {sendingResponse ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Enviando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-4 w-4" />
+                              <span>Enviar</span>
+                            </>
+                          )}
                         </button>
                       </div>
-                    ) : (
-                      <label className="inline-block mb-3">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleResponseImageChange}
-                          className="hidden"
-                          id="response-image"
-                        />
-                        <span className="inline-flex items-center px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 text-xs sm:text-sm">
-                          <ImageIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                          Adjuntar imagen
-                        </span>
-                      </label>
-                    )}
-
-                    <button
-                      onClick={handleSendResponse}
-                      disabled={!responseMessage.trim() || sendingResponse}
-                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-medium py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-                    >
-                      {sendingResponse ? (
-                        <>
-                          <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
-                          <span>Enviando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-3 w-3 sm:h-4 sm:w-4" />
-                          <span>Enviar Respuesta</span>
-                        </>
-                      )}
-                    </button>
+                    </div>
                   </div>
                 </div>
               )}
