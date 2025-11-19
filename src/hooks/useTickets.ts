@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react';
 import { supabase, Ticket, TicketResponse } from '@/lib/supabase';
 
+export type PriorityLevel = 'low' | 'medium' | 'high';
+
+export interface AutoPriorityMetadata {
+  score: number;
+  level: PriorityLevel;
+  reasons: string[];
+}
+
 export interface TicketUserInfo {
   full_name?: string | null;
   email?: string | null;
@@ -11,11 +19,171 @@ export interface TicketUserInfo {
 
 export type TicketWithUser = Ticket & {
   users?: TicketUserInfo | null;
+  autoPriority?: AutoPriorityMetadata;
 };
 
 export type TicketResponseWithUser = TicketResponse & {
   users?: TicketUserInfo | null;
 };
+
+const TAG_WEIGHTS: Record<string, number> = {
+  'Recepción': 20,
+  'recepción': 20,
+  'recepcion': 20,
+  'Huesped': 20,
+  'huésped': 20,
+  'huesped': 20,
+  'Sin Internet': 20,
+  'sin internet': 20,
+  'No Proyecta': 20,
+  'no proyecta': 20,
+  'Cocina': 20,
+  'cocina': 20,
+  'Problemas con Notebook': 20,
+  'problemas con notebook': 20,
+  'Impresora': 20,
+  'impresora': 20,
+  'Sin WiFi': 20,
+  'sin wifi': 20,
+  'Consulta Técnica': 20,
+  'consulta técnica': 20,
+  'Solicitud de Adaptador': 20,
+  'solicitud de adaptador': 20,
+  'Problemas POG': 20,
+  'problemas pog': 20,
+};
+
+const KEYWORD_RULES: { keywords: string[]; weight: number; reason: string }[] = [
+  {
+    keywords: ['sin internet', 'Sin Internet', 'no hay internet', 'wifi caído', 'wifi caido', 'wifi fuera', 'Sin WiFi', 'sin wifi'],
+    weight: 60,
+    reason: 'Reporte indica caída de internet',
+  },
+  {
+    keywords: ['no proyecta', 'No Proyecta', 'proyector', 'pantalla negra'],
+    weight: 40,
+    reason: 'Problema con proyección detectado',
+  },
+  {
+    keywords: ['huésped molesto', 'huésped esperando', 'huesped molesto', 'huesped esperando', 'Huesped molesto', 'Huesped esperando'],
+    weight: 45,
+    reason: 'Impacto directo en huésped',
+  },
+  {
+    keywords: ['impresora', 'Impresora', 'no imprime', 'impresora detenida', 'impresora sin'],
+    weight: 35,
+    reason: 'Problema con impresora detectado',
+  },
+  {
+    keywords: ['problemas con notebook', 'Problemas con Notebook', 'laptop', 'notebook', 'equipo no arranca'],
+    weight: 30,
+    reason: 'Reporte de notebook/pc con fallas',
+  },
+];
+
+const COMBO_RULES: { matchAll: string[]; weight: number; reason: string }[] = [
+  {
+    matchAll: ['recepción', 'no funciona'],
+    weight: 50,
+    reason: 'Recepción sin sistema funcional',
+  },
+  {
+    matchAll: ['recepcion', 'no funciona'],
+    weight: 50,
+    reason: 'Recepción sin sistema funcional',
+  },
+  {
+    matchAll: ['recepción', 'caído'],
+    weight: 50,
+    reason: 'Recepción reporta sistema caído',
+  },
+  {
+    matchAll: ['recepcion', 'caido'],
+    weight: 50,
+    reason: 'Recepción reporta sistema caído',
+  },
+  {
+    matchAll: ['cocina', 'sin luz'],
+    weight: 55,
+    reason: 'Cocina sin energía',
+  },
+  {
+    matchAll: ['cocina', 'sin gas'],
+    weight: 55,
+    reason: 'Cocina sin gas',
+  },
+];
+
+const GENERAL_KEYWORDS: { keywords: string[]; weight: number; reason: string }[] = [
+  { keywords: ['no funciona', 'no responde', 'caído', 'caido', 'bloqueado'], weight: 25, reason: 'Incidente crítico detectado' },
+  { keywords: ['no arranca', 'sin acceso', 'error 500', 'error 404'], weight: 15, reason: 'Error técnico detectado' },
+  { keywords: ['urgente', 'crítico', 'critico'], weight: 25, reason: 'Usuario marcó el incidente como crítico' },
+];
+
+function normalizeText(value?: string | string[] | null) {
+  if (!value) return '';
+  return Array.isArray(value) ? value.join(' ').toLowerCase() : value.toLowerCase();
+}
+
+function calculateAutoPriority(ticket: Ticket): AutoPriorityMetadata {
+  const description = normalizeText(ticket.description);
+  const tagsText = normalizeText(ticket.tags);
+  const combinedText = `${description} ${tagsText}`;
+
+  let score = 0;
+  const reasons = new Set<string>();
+
+  KEYWORD_RULES.forEach(rule => {
+    if (rule.keywords.some(keyword => combinedText.includes(keyword))) {
+      score += rule.weight;
+      reasons.add(rule.reason);
+    }
+  });
+
+  COMBO_RULES.forEach(rule => {
+    const matchesAll = rule.matchAll.every(keyword => combinedText.includes(keyword));
+    if (matchesAll) {
+      score += rule.weight;
+      reasons.add(rule.reason);
+    }
+  });
+
+  Object.entries(TAG_WEIGHTS).forEach(([tag, weight]) => {
+    if (ticket.tags?.some(ticketTag => ticketTag.toLowerCase() === tag)) {
+      score += weight;
+      reasons.add(`Etiqueta marcada: ${tag}`);
+    }
+  });
+
+  GENERAL_KEYWORDS.forEach(rule => {
+    if (rule.keywords.some(keyword => combinedText.includes(keyword))) {
+      score += rule.weight;
+      reasons.add(rule.reason);
+    }
+  });
+
+  const clampedScore = Math.min(100, score);
+  let level: PriorityLevel = 'low';
+  if (clampedScore >= 70) {
+    level = 'high';
+  } else if (clampedScore >= 40) {
+    level = 'medium';
+  }
+
+  return {
+    score: clampedScore,
+    level,
+    reasons: Array.from(reasons),
+  };
+}
+
+function attachAutoPriority(ticketsData: Ticket[] | null): TicketWithUser[] {
+  if (!ticketsData) return [];
+  return ticketsData.map((ticket) => ({
+    ...(ticket as TicketWithUser),
+    autoPriority: calculateAutoPriority(ticket),
+  }));
+}
 
 export function useTickets() {
   const [tickets, setTickets] = useState<TicketWithUser[]>([]);
@@ -42,7 +210,7 @@ export function useTickets() {
         throw error;
       }
 
-      setTickets((data as TicketWithUser[] | null) || []);
+      setTickets(attachAutoPriority(data || []));
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'Error desconocido');
       console.error('Error fetching tickets:', error);

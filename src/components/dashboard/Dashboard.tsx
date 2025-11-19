@@ -1,10 +1,8 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useTickets } from '@/hooks/useTickets';
-import type { TicketResponseWithUser } from '@/hooks/useTickets';
+import { useTickets, TicketResponseWithUser, TicketWithUser, PriorityLevel } from '@/hooks/useTickets';
 import { supabase } from '@/lib/supabase';
-import type { Ticket as TicketType } from '@/lib/supabase';
 import { LogOut, User, Ticket as TicketIcon, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft, PlayCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
@@ -19,7 +17,6 @@ export default function Dashboard() {
     createTicket, 
     uploadImage, 
     clearError,
-    refreshTickets,
     fetchTicketResponses
   } = useTickets();
   const { addToast, ToastContainer } = useToast();
@@ -36,7 +33,7 @@ export default function Dashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
-  const [selectedTicket, setSelectedTicket] = useState<TicketType | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<TicketWithUser | null>(null);
   const [ticketResponses, setTicketResponses] = useState<TicketResponseWithUser[]>([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
 
@@ -89,7 +86,7 @@ export default function Dashboard() {
   }, [tickets, user, statusFilter]);
 
   // Cargar respuestas cuando se selecciona un ticket
-  const handleTicketClick = async (ticket: TicketType) => {
+  const handleTicketClick = async (ticket: TicketWithUser) => {
     setSelectedTicket(ticket);
     setLoadingResponses(true);
     setTicketResponses([]);
@@ -226,6 +223,28 @@ export default function Dashboard() {
     }
   };
 
+  const getPriorityLabel = (level: PriorityLevel) => {
+    switch (level) {
+      case 'high':
+        return 'Prioridad Alta (automático)';
+      case 'medium':
+        return 'Prioridad Media (automático)';
+      default:
+        return 'Prioridad Baja (automático)';
+    }
+  };
+
+  const getPriorityStyle = (level: PriorityLevel) => {
+    switch (level) {
+      case 'high':
+        return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700';
+      case 'medium':
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700';
+      default:
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700';
+    }
+  };
+
   // Etiquetas disponibles
   const availableTags = [
     'Impresora', 'Consulta Técnica', 'Recepción', 'Huesped', 
@@ -299,7 +318,6 @@ export default function Dashboard() {
       }
 
       // Crear ticket
-      console.log('📋 Creando ticket...');
       const { error } = await createTicket({
         description: description.trim(),
         tags: selectedTags,
@@ -321,21 +339,13 @@ export default function Dashboard() {
 
       console.log('🎉 ¡Ticket enviado exitosamente!');
       
-      // Actualizar lista de tickets
-      await refreshTickets();
-      
+      // La lista ya se actualizó optimísticamente en el hook
       addToast({
         type: 'success',
         title: '¡Ticket enviado!',
         message: 'Tu solicitud ha sido enviada correctamente. Te contactaremos pronto.',
         duration: 5000
       });
-      
-      // Si hay un ticket seleccionado, actualizar sus respuestas también
-      if (selectedTicket) {
-        const { data } = await fetchTicketResponses(selectedTicket.id);
-        setTicketResponses(data || []);
-      }
     } catch (error: unknown) {
       console.error('💥 Error completo:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error inesperado al enviar el ticket';
@@ -349,7 +359,6 @@ export default function Dashboard() {
         duration: 6000
       });
     } finally {
-      console.log('🔚 Finalizando proceso...');
       setIsSubmitting(false);
     }
   };
@@ -762,6 +771,14 @@ export default function Dashboard() {
                         </div>
                       )}
 
+                      {ticket.autoPriority && ticket.autoPriority.level !== 'low' && (
+                        <div
+                          className={`mt-2 inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${getPriorityStyle(ticket.autoPriority.level)}`}
+                        >
+                          {getPriorityLabel(ticket.autoPriority.level)}
+                        </div>
+                      )}
+
                           {/* Indicador de imagen */}
                           {ticket.image_url && (
                             <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400">
@@ -829,6 +846,21 @@ export default function Dashboard() {
                           </span>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {selectedTicket.autoPriority && (
+                    <div
+                      className={`mb-4 p-3 rounded-lg border ${getPriorityStyle(selectedTicket.autoPriority.level)}`}
+                    >
+                      <p className="text-sm font-semibold">{getPriorityLabel(selectedTicket.autoPriority.level)}</p>
+                      {selectedTicket.autoPriority.reasons.length > 0 && (
+                        <ul className="mt-2 text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                          {selectedTicket.autoPriority.reasons.map((reason) => (
+                            <li key={reason}>• {reason}</li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
 

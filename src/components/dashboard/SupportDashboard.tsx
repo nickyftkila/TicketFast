@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
-import { useTickets, TicketWithUser, TicketResponseWithUser } from '@/hooks/useTickets';
+import { useTickets, TicketWithUser, TicketResponseWithUser, PriorityLevel } from '@/hooks/useTickets';
 import { useToast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
@@ -90,7 +90,11 @@ export default function SupportDashboard() {
       });
     }
 
-    return filtered;
+    return [...filtered].sort((a, b) => {
+      const scoreDiff = (b.autoPriority?.score ?? 0) - (a.autoPriority?.score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   }, [tickets, statusFilter, searchQuery]);
 
   // Limpiar ticket seleccionado si no está en la lista filtrada
@@ -308,6 +312,27 @@ export default function SupportDashboard() {
         return status;
     }
   };
+  const getPriorityLabel = (level: PriorityLevel) => {
+    switch (level) {
+      case 'high':
+        return 'Prioridad Alta (automático)';
+      case 'medium':
+        return 'Prioridad Media (automático)';
+      default:
+        return 'Prioridad Baja (automático)';
+    }
+  };
+
+  const getPriorityStyle = (level: PriorityLevel) => {
+    switch (level) {
+      case 'high':
+        return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700';
+      case 'medium':
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700';
+      default:
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -475,16 +500,24 @@ export default function SupportDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {filteredTickets.map((ticket) => (
-                      <button
-                        key={ticket.id}
-                        onClick={() => handleTicketClick(ticket)}
-                        className={`w-full text-left p-3 rounded-lg border transition-all hover:shadow-sm ${
-                          selectedTicket?.id === ticket.id
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-500'
-                            : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                        }`}
-                      >
+                    {filteredTickets.map((ticket) => {
+                      const priorityLevel = ticket.autoPriority?.level;
+                      const priorityBorder =
+                        priorityLevel === 'high'
+                          ? 'border-red-400 dark:border-red-500'
+                          : priorityLevel === 'medium'
+                          ? 'border-yellow-400 dark:border-yellow-500'
+                          : '';
+                      return (
+                        <button
+                          key={ticket.id}
+                          onClick={() => handleTicketClick(ticket)}
+                          className={`w-full text-left p-3 rounded-lg border transition-all hover:shadow-sm ${
+                            selectedTicket?.id === ticket.id
+                              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-500'
+                              : `bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 ${priorityBorder}`
+                          }`}
+                        >
                         {/* Header compacto */}
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -512,6 +545,12 @@ export default function SupportDashboard() {
                           {ticket.description}
                         </p>
 
+                        {ticket.autoPriority && ticket.autoPriority.level !== 'low' && (
+                          <div className={`mb-2 inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${getPriorityStyle(ticket.autoPriority.level)}`}>
+                            {getPriorityLabel(ticket.autoPriority.level)}
+                          </div>
+                        )}
+
                         {/* Fecha y tag principal */}
                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                           <span>{formatDate(ticket.created_at)}</span>
@@ -521,8 +560,9 @@ export default function SupportDashboard() {
                             </span>
                           )}
                         </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -630,6 +670,21 @@ export default function SupportDashboard() {
                             </span>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {selectedTicket.autoPriority && (
+                      <div className={`space-y-2 p-3 rounded-lg border ${getPriorityStyle(selectedTicket.autoPriority.level)}`}>
+                        <h2 className="text-sm font-semibold">
+                          {getPriorityLabel(selectedTicket.autoPriority.level)}
+                        </h2>
+                        {selectedTicket.autoPriority.reasons.length > 0 && (
+                          <ul className="text-xs text-gray-700 dark:text-gray-200 space-y-1">
+                            {selectedTicket.autoPriority.reasons.map(reason => (
+                              <li key={reason}>• {reason}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     )}
 
