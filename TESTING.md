@@ -115,17 +115,22 @@ src/
 
 ## 🎯 Cobertura de Pruebas
 
+### 📊 Cobertura Actual: 12.37%
+
+**Estado**: ⚠️ Cobertura insuficiente para producción (recomendado: 70%+)
+
 ### Funcionalidades Principales
 
-#### Autenticación
+#### Autenticación (70.83% cobertura en useAuth)
 - [x] Login
 - [x] Registro
 - [x] Recuperación de contraseña
 - [x] Actualización de contraseña
 - [x] Logout
 - [x] Gestión de sesión
+- [ ] Componentes: AuthContainer, ForgotPasswordForm, RegisterForm, ProtectedRoute
 
-#### Seguridad
+#### Seguridad (26 pruebas completas)
 - [x] Autenticación y autorización
 - [x] Validación de entrada
 - [x] Protección contra inyección SQL
@@ -135,26 +140,30 @@ src/
 - [x] Rate limiting
 - [x] Políticas RLS
 
-#### Gestión de Tickets
-- [x] Cálculo de prioridades automáticas
-- [ ] Crear ticket
-- [ ] Listar tickets
+#### Gestión de Tickets (0% cobertura en useTickets)
+- [x] Cálculo de prioridades automáticas (31 pruebas)
+- [ ] **CRÍTICO**: Crear ticket
+- [ ] **CRÍTICO**: Listar tickets
+- [ ] **CRÍTICO**: Subir imágenes
+- [ ] **CRÍTICO**: Obtener respuestas de ticket
 - [ ] Filtrar tickets por estado
 - [ ] Ver detalles de ticket
 - [ ] Responder a ticket
 - [ ] Cambiar estado de ticket
 
-#### Dashboard
-- [ ] Renderizado de dashboard de usuario
-- [ ] Renderizado de dashboard de soporte
+#### Dashboard (0% cobertura)
+- [ ] **CRÍTICO**: Dashboard de usuario (crear tickets, listar, filtrar)
+- [ ] **CRÍTICO**: Dashboard de soporte (cambiar estado, responder)
 - [ ] Filtros y búsqueda
 - [ ] Estadísticas y métricas
+- [ ] Responsive design (drawers móviles)
 
-#### UI/UX
-- [x] Formulario de login
+#### UI/UX (20% cobertura)
+- [x] Formulario de login (90.9% cobertura)
 - [ ] Formulario de registro
 - [ ] Formulario de recuperación
-- [ ] Responsive design
+- [ ] Sistema de Toast/notificaciones
+- [ ] Responsive design (useMediaQuery)
 - [ ] Tema oscuro
 
 ## 🔒 Pruebas de Seguridad
@@ -207,6 +216,51 @@ src/
 #### 8. Validación de Integridad de Datos
 - ✅ Validación de UUIDs
 - ✅ Validación de timestamps
+
+## ⚠️ Análisis de Cobertura
+
+### Estado Actual
+- **Cobertura Total**: 12.37% (Statements)
+- **Meta Recomendada**: 70-80% para producción
+- **Estado**: ⚠️ **INSUFICIENTE** - Se requiere trabajo adicional
+
+### Lo que Falta (87.63% del código)
+
+#### 🔴 CRÍTICO - Funcionalidad Core (0% cobertura)
+1. **useTickets Hook completo**
+   - Crear, listar, actualizar tickets
+   - Subir imágenes
+   - Obtener y crear respuestas
+   
+2. **Dashboard de Usuario**
+   - Formulario de creación de tickets
+   - Lista y filtrado
+   - Visualización de detalles
+   
+3. **Dashboard de Soporte**
+   - Cambio de estado de tickets
+   - Respuestas a tickets
+   - Métricas y estadísticas
+
+#### 🟡 IMPORTANTE - Componentes Restantes
+4. **Componentes de Autenticación**
+   - ForgotPasswordForm
+   - RegisterForm
+   - AuthContainer
+   - ProtectedRoute
+
+5. **Hooks Adicionales**
+   - useMediaQuery (responsive)
+
+6. **Componentes UI**
+   - Toast (sistema de notificaciones)
+
+#### 🟢 BAJA PRIORIDAD
+7. **Páginas**
+   - page.tsx (ruteo básico)
+   - reset-password/page.tsx
+
+Ver análisis detallado en `COVERAGE_ANALYSIS.md`
 
 ## 🔄 Próximas Pruebas a Implementar
 

@@ -78,3 +78,19 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 }
 
+// Mock ResizeObserver (necesario para Recharts y componentes que usan ResizeObserver)
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Configurar variables de entorno de Supabase para pruebas
+// Usar las credenciales reales ya que no hay credenciales de prueba
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://ktbnambciqauyssrneyl.supabase.co'
+}
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0Ym5hbWJjaXFhdXlzc3JuZXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2ODUyOTgsImV4cCI6MjA3NDI2MTI5OH0.B7osCpOpMtZSSzLZTMqnVyuHd__fGzXuZlJjZzYONiU'
+}
+
