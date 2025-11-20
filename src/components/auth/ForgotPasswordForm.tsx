@@ -85,12 +85,12 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+      <div className="bg-black border border-[#00b41d] rounded-2xl shadow-card-soft p-8 text-white">
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+          <h2 className="text-3xl font-bold text-white mb-2">
             Recuperar Contraseña
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-white/70">
             Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña
           </p>
         </div>
@@ -98,23 +98,23 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Email */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="email" className="block text-sm font-medium text-white/80 mb-2">
               Email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
+                <Mail className="h-5 w-5 text-white/40" />
               </div>
               <input
                 {...register('email')}
                 type="email"
                 id="email"
                 placeholder="tu@email.com"
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="block w-full pl-10 pr-3 py-3 border border-[#367640] rounded-xl bg-black text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#00b41d] focus:border-transparent transition-colors"
               />
             </div>
             {errors.email && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+              <p className="mt-1 text-sm text-red-400">
                 {errors.email.message}
               </p>
             )}
@@ -122,8 +122,8 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
 
           {/* Error Message */}
           {errors.root && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-600 dark:text-red-400 whitespace-pre-line">
+            <div className="bg-red-900/20 border border-red-600/40 rounded-lg p-4">
+              <p className="text-sm text-red-300 whitespace-pre-line">
                 {errors.root.message}
               </p>
             </div>
@@ -133,7 +133,7 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
+            className="w-full bg-[linear-gradient(90deg,#000000,#00b41d)] border border-[#00b41d] hover:opacity-90 disabled:opacity-60 text-white font-semibold py-3 px-4 rounded-2xl transition-opacity duration-200 flex items-center justify-center shadow-card-soft"
           >
             {isSubmitting ? (
               <>
@@ -150,7 +150,7 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
             <button
               type="button"
               onClick={onSwitchToLogin}
-              className="inline-flex items-center text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white font-medium transition-colors"
+              className="inline-flex items-center text-sm text-[#00b41d] hover:text-[#00d951] font-medium transition-colors"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Volver al login

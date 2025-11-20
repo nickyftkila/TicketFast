@@ -58,36 +58,36 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+      <div className="bg-black border border-[#00b41d] rounded-2xl shadow-card-soft p-4 sm:p-6 lg:p-8 text-white">
+        <div className="text-center mb-4 sm:mb-6">
+          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1 sm:mb-2">
             Iniciar Sesión
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Accede a tu cuenta de TicketFast
+          <p className="text-sm sm:text-base text-white/75">
+            Ingresa para continuar gestionando tus tickets
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 sm:space-y-5">
           {/* Email */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="email" className="block text-sm font-semibold text-white mb-2">
               Email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
+                <Mail className="h-5 w-5 text-white/50" />
               </div>
               <input
                 {...register('email')}
                 type="email"
                 id="email"
                 placeholder="tu@email.com"
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="block w-full pl-10 pr-3 py-3 border border-[#367640] rounded-xl bg-black text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-[#00b41d]/50 focus:border-[#00b41d] hover:border-[#00b41d]/80 transition-all duration-200"
               />
             </div>
             {errors.email && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+              <p className="mt-1 text-sm text-red-400">
                 {errors.email.message}
               </p>
             )}
@@ -95,34 +95,34 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
 
           {/* Password */}
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="password" className="block text-sm font-semibold text-white mb-2">
               Contraseña
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
+                <Lock className="h-5 w-5 text-white/50" />
               </div>
               <input
                 {...register('password')}
                 type={showPassword ? 'text' : 'password'}
                 id="password"
                 placeholder="••••••••"
-                className="block w-full pl-10 pr-12 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="block w-full pl-10 pr-12 py-3 border border-[#367640] rounded-xl bg-black text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-[#00b41d]/50 focus:border-[#00b41d] hover:border-[#00b41d]/80 transition-all duration-200"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/60 hover:text-white transition-colors"
               >
                 {showPassword ? (
-                  <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+                  <EyeOff className="h-5 w-5" />
                 ) : (
-                  <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+                  <Eye className="h-5 w-5" />
                 )}
               </button>
             </div>
             {errors.password && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+              <p className="mt-1 text-sm text-red-400">
                 {errors.password.message}
               </p>
             )}
@@ -133,7 +133,7 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
             <button
               type="button"
               onClick={onSwitchToForgotPassword}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium transition-colors"
+              className="text-sm text-[#00b41d] hover:text-[#00d951] font-medium transition-colors"
             >
               ¿Olvidaste tu contraseña?
             </button>
@@ -141,8 +141,8 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
 
           {/* Error Message */}
           {errors.root && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-600 dark:text-red-400">
+            <div className="bg-red-900/20 border border-red-600/40 rounded-lg p-4">
+              <p className="text-sm text-red-300">
                 {errors.root.message}
               </p>
             </div>
@@ -152,7 +152,7 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
+            className="w-full bg-[linear-gradient(90deg,#000000,#00b41d)] border border-[#00b41d] hover:opacity-90 hover:shadow-[0_0_20px_rgba(0,180,29,0.3)] disabled:opacity-60 text-white font-semibold py-3 px-4 rounded-2xl transition-all duration-200 flex items-center justify-center shadow-card-soft"
           >
             {isSubmitting ? (
               <>

@@ -80,9 +80,9 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+    <div className="page-shell">
+      <div className="page-safe-area min-h-screen flex items-center justify-center py-10">
+        <div className="glass-panel panel-padding w-full max-w-lg">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
               Restablecer Contraseña

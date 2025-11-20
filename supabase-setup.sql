@@ -85,8 +85,8 @@ CREATE TRIGGER update_ticket_responses_updated_at
 -- 3) DATOS BÁSICOS (USUARIOS)
 
 INSERT INTO users (email, full_name, role) VALUES
-  ('kei.martinez@duocuc.cl', 'Kei Martinez', 'user'),
-  ('l.garciadelahu@duocuc.cl', 'L. Garcia de la Hu', 'support')
+  ('kei.martinez@duocuc.cl', 'Keila Martinez', 'user'),
+  ('pruebacastom@gmail.com', 'Juan Cortez', 'support')
 ON CONFLICT (email) DO NOTHING;
 
 
@@ -149,7 +149,7 @@ END$$;
 
 -- Ajusta los correos si cambian en tu entorno
 
-DELETE FROM users WHERE email IN ('kei.martinez@duocuc.cl', 'l.garciadelahu@duocuc.cl');
+DELETE FROM users WHERE email IN ('kei.martinez@duocuc.cl', 'pruebacastom@gmail.com');
 
 INSERT INTO users (id, email, full_name, role)
 SELECT 
@@ -157,33 +157,39 @@ SELECT
   au.email,
   COALESCE(au.raw_user_meta_data->>'full_name', 'Usuario'),
   CASE 
-    WHEN au.email = 'l.garciadelahu@duocuc.cl' THEN 'support'
+    WHEN au.email = 'pruebacastom@gmail.com' THEN 'support'
     ELSE 'user'
   END as role
 FROM auth.users au
-WHERE au.email IN ('kei.martinez@duocuc.cl', 'l.garciadelahu@duocuc.cl');
+WHERE au.email IN ('kei.martinez@duocuc.cl', 'pruebacastom@gmail.com');
 
 
 
 -- Actualizar referencias en tickets y respuestas a los IDs reales de auth
+-- Esto actualiza los tickets/responses que fueron creados con IDs antiguos de users
+-- a los nuevos IDs que vienen de auth.users
 
-UPDATE tickets 
+UPDATE tickets t
 SET created_by = au.id
 FROM auth.users au
-WHERE tickets.created_by = (
-  SELECT u.id FROM users u WHERE u.email = au.email
+WHERE EXISTS (
+  SELECT 1 FROM users u 
+  WHERE u.id = t.created_by 
+  AND u.email = au.email
 )
-AND au.email IN ('kei.martinez@duocuc.cl', 'l.garciadelahu@duocuc.cl');
+AND au.email IN ('kei.martinez@duocuc.cl', 'pruebacastom@gmail.com');
 
 
 
-UPDATE ticket_responses 
+UPDATE ticket_responses tr
 SET created_by = au.id
 FROM auth.users au
-WHERE ticket_responses.created_by = (
-  SELECT u.id FROM users u WHERE u.email = au.email
+WHERE EXISTS (
+  SELECT 1 FROM users u 
+  WHERE u.id = tr.created_by 
+  AND u.email = au.email
 )
-AND au.email IN ('kei.martinez@duocuc.cl', 'l.garciadelahu@duocuc.cl');
+AND au.email IN ('kei.martinez@duocuc.cl', 'pruebacastom@gmail.com');
 
 
 
@@ -250,7 +256,64 @@ CREATE POLICY "Users can delete their own images" ON storage.objects
 
 
 
--- 8) INSERTAR UN TICKET DE PRUEBA SI NO HAY NINGUNO
+-- 8) CREAR ÍNDICES PARA MEJORAR RENDIMIENTO
+
+-- Índice para búsquedas por email (muy común)
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- Índice para búsquedas por created_by en tickets
+CREATE INDEX IF NOT EXISTS idx_tickets_created_by ON tickets(created_by);
+
+-- Índice para búsquedas por status en tickets
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+
+-- Índice para ordenar por created_at en tickets
+CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at DESC);
+
+-- Índice para búsquedas por ticket_id en ticket_responses
+CREATE INDEX IF NOT EXISTS idx_ticket_responses_ticket_id ON ticket_responses(ticket_id);
+
+-- Índice para búsquedas por created_by en ticket_responses
+CREATE INDEX IF NOT EXISTS idx_ticket_responses_created_by ON ticket_responses(created_by);
+
+-- Índice compuesto para búsquedas frecuentes de tickets por usuario y estado
+CREATE INDEX IF NOT EXISTS idx_tickets_user_status ON tickets(created_by, status);
+
+
+-- 9) FUNCIÓN Y TRIGGER PARA SINCRONIZAR USUARIOS AUTOMÁTICAMENTE
+-- Cuando se crea un usuario en auth.users, se crea automáticamente en la tabla users
+
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, email, full_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', 'Usuario'),
+    'user' -- Por defecto todos son 'user', los 'support' se asignan manualmente
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET 
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, users.full_name),
+    updated_at = NOW();
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Eliminar trigger si existe
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- Crear trigger para sincronizar usuarios automáticamente
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT OR UPDATE ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_user();
+
+
+-- 10) INSERTAR UN TICKET DE PRUEBA SI NO HAY NINGUNO
 
 INSERT INTO tickets (description, tags, is_urgent, created_by)
 SELECT 
@@ -264,7 +327,7 @@ AND NOT EXISTS (SELECT 1 FROM tickets LIMIT 1);
 
 
 
--- 9) VERIFICACIONES FINALES
+-- 11) VERIFICACIONES FINALES
 
 SELECT 'Tablas listas' as status;
 SELECT schemaname, tablename, rowsecurity 

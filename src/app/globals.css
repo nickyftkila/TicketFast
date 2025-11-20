@@ -3,19 +3,108 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #090909;
+  --card-muted: #111111;
+  --card-dark: #000000;
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --radius-lg: 1.75rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background-color: #000;
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  img, picture, video, canvas, svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  input, button, textarea, select {
+    font: inherit;
+  }
+
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.35);
+    color: inherit;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .page-shell {
+    @apply min-h-screen bg-black text-white;
+  }
+
+  .page-safe-area {
+    @apply w-full max-w-7xl mx-auto px-4 xs:px-5 sm:px-6 lg:px-8;
+  }
+
+  .glass-panel {
+    @apply bg-black border border-transparent shadow-2xl shadow-black/60 rounded-3xl;
+    border-image: linear-gradient(90deg, #00b41d, #00b41d) 1;
+  }
+
+  .panel-padding {
+    @apply p-4 xs:p-5 sm:p-6 lg:p-8;
+  }
+
+  .section-title {
+    @apply text-2xl xs:text-3xl font-semibold tracking-tight text-white;
+  }
+
+  .subtle-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
+  }
+
+  .subtle-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .subtle-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .subtle-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.6);
+    border-radius: 9999px;
+  }
+}
+
+@layer utilities {
+  .safe-px {
+    @apply px-4 xs:px-5 sm:px-6 lg:px-8;
+  }
+
+  .safe-py {
+    @apply py-6 sm:py-8 lg:py-12;
+  }
+
+  .content-grid {
+    @apply grid gap-4 sm:gap-6;
+  }
+
+  .card-grid {
+    @apply grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3;
+  }
 }

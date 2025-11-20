@@ -15,129 +15,120 @@ export default function AuthContainer() {
   const switchToForgotPassword = () => setCurrentView('forgot-password');
 
   return (
-    <div className="min-h-screen flex">
-             {/* Columna izquierda - Imagen */}
-       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 relative overflow-hidden items-center justify-center">
-        {/* Patrón de fondo */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-10 left-10 w-20 h-20 bg-white rounded-full"></div>
-          <div className="absolute top-40 right-20 w-16 h-16 bg-white rounded-full"></div>
-          <div className="absolute bottom-20 left-20 w-12 h-12 bg-white rounded-full"></div>
-          <div className="absolute bottom-40 right-10 w-24 h-24 bg-white rounded-full"></div>
-        </div>
-        
-                 {/* Contenido con animación Lottie - Centrado */}
-         <div className="relative z-10 flex flex-col justify-center items-center text-white px-12 text-center w-full">
-           <div className="text-center max-w-md mx-auto">
-                                      {/* Título "Ticket Fast" con diseño moderno */}
-             <h1 className="text-6xl font-extrabold mb-4 leading-tight">
-               <span className="text-blue-200 text-4xl font-semibold">Ticket</span>{' '}
-               <span className="text-white drop-shadow-lg">Fast</span>
-             </h1>
-             <p className="text-2xl text-blue-100 mb-12 font-light">
-               Gestión de tickets simplificada
-             </p>
-            
-                         {/* Características destacadas - Horizontal */}
-             <div className="space-y-6">
-               {/* Gestión Simplificada */}
-               <div className="flex items-center space-x-4">
-                 <div className="relative">
-                   {/* Icono de Ticket */}
-                   <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                     <div className="relative">
-                       <div className="w-10 h-6 bg-white/90 rounded shadow-lg transform rotate-3 relative">
-                         <div className="absolute top-1/2 left-1 right-1 h-0.5 bg-blue-600/30"></div>
-                         <div className="absolute -left-0.5 top-1/2 w-1 h-1 bg-blue-600 rounded-full transform -translate-y-1/2"></div>
-                         <div className="absolute -right-0.5 top-1/2 w-1 h-1 bg-blue-600 rounded-full transform -translate-y-1/2"></div>
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-                 <div className="flex-1 text-left">
-                   <h3 className="font-semibold text-lg text-white mb-1">Gestión Simplificada</h3>
-                   <p className="text-blue-100 text-sm">Organiza y rastrea todos tus tickets en un solo lugar</p>
-                 </div>
-               </div>
-               
-               {/* Respuesta Rápida */}
-               <div className="flex items-center space-x-4">
-                 <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                   <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                   </svg>
-                 </div>
-                 <div className="flex-1 text-left">
-                   <h3 className="font-semibold text-lg text-white mb-1">Respuesta Rápida</h3>
-                   <p className="text-blue-100 text-sm">Resuelve problemas de manera eficiente y oportuna</p>
-                 </div>
-               </div>
-               
-               {/* Seguimiento Completo */}
-               <div className="flex items-center space-x-4">
-                 <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                   <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                   </svg>
-                 </div>
-                 <div className="flex-1 text-left">
-                   <h3 className="font-semibold text-lg text-white mb-1">Seguimiento Completo</h3>
-                   <p className="text-blue-100 text-sm">Mantén un registro detallado de cada ticket</p>
-                 </div>
-               </div>
-             </div>
-          </div>
-        </div>
-      </div>
+    <div className="page-shell overflow-hidden">
+      <div className="page-safe-area h-screen flex flex-col justify-center">
+        <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 items-center">
+          {/* Columna izquierda - hero responsivo */}
+          <section
+            className="hidden md:flex glass-panel p-4 sm:p-5 lg:p-6 relative overflow-hidden bg-black border border-black text-white shadow-card-soft"
+            style={{ borderImage: 'none' }}
+          >
+            <div className="relative z-10 flex flex-col items-center text-center w-full space-y-4 sm:space-y-6 lg:space-y-8">
+              <div>
+                <p className="uppercase text-xs tracking-[0.35em] text-white/60 mb-2">
+                  Plataforma integral
+                </p>
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black leading-tight mb-2">
+                  <span className="font-semibold text-[#00b41d]">Ticket</span>{' '}
+                  <span className="drop-shadow-lg">Fast</span>
+                </h1>
+                <p className="text-sm sm:text-base lg:text-lg text-white/80 max-w-lg mx-auto leading-relaxed">
+                  Gestión de tickets simplificada para cualquier equipo y dispositivo.
+                </p>
+              </div>
 
-      {/* Columna derecha - Formulario */}
-      <div className="flex-1 flex items-center justify-center p-4 lg:p-8 bg-gray-50 dark:bg-gray-900">
-        <div className="w-full max-w-md">
-          {/* Logo para móviles */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
-                />
-              </svg>
+              <div className="w-full max-w-xl grid gap-3 sm:gap-4">
+                {[
+                  {
+                    title: 'Gestión Simplificada',
+                    description: 'Organiza y rastrea todos tus tickets en un solo lugar',
+                    icon: (
+                      <div className="w-14 h-14 bg-black border border-black rounded-2xl flex items-center justify-center">
+                        <div className="w-10 h-6 bg-black border border-white/30 rounded shadow-lg relative">
+                          <div className="absolute inset-x-2 top-1/2 h-0.5 bg-[#00b41d] -translate-y-1/2" />
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    title: 'Respuesta Rápida',
+                    description: 'Resuelve problemas de forma eficiente y oportuna',
+                    icon: (
+                      <div className="w-14 h-14 bg-black border border-black rounded-2xl flex items-center justify-center">
+                        <svg className="w-7 h-7 text-[#00b41d]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </div>
+                    ),
+                  },
+                  {
+                    title: 'Seguimiento Completo',
+                    description: 'Mantén un registro detallado de cada ticket',
+                    icon: (
+                      <div className="w-14 h-14 bg-black border border-black rounded-2xl flex items-center justify-center">
+                        <svg className="w-7 h-7 text-[#00b41d]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    ),
+                  },
+                ].map((feature) => (
+                  <div
+                    key={feature.title}
+                    className="flex items-center gap-3 sm:gap-4 text-left bg-black border border-black rounded-2xl p-3 sm:p-4"
+                  >
+                    {feature.icon}
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-base sm:text-lg text-white">{feature.title}</h3>
+                      <p className="text-xs sm:text-sm text-white/70 leading-relaxed">{feature.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              TicketFast
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Gestiona tus tickets de forma rápida y eficiente
-            </p>
-          </div>
+          </section>
 
-          {/* Contenido dinámico basado en la vista actual */}
-          <div className="transition-all duration-300 ease-in-out">
-                         {currentView === 'login' && (
-               <LoginForm
-                 onSwitchToForgotPassword={switchToForgotPassword}
-               />
-             )}
-             
-             {currentView === 'forgot-password' && (
-               <ForgotPasswordForm onSwitchToLogin={switchToLogin} />
-             )}
-          </div>
+          {/* Columna derecha - formulario */}
+          <section className="glass-panel p-4 sm:p-5 lg:p-6 border border-black bg-black text-white shadow-card-soft" style={{ borderImage: 'none' }}>
+            <div className="lg:hidden text-center mb-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-[#00b41d] rounded-2xl mb-4">
+                <svg
+                  className="w-8 h-8 text-black"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
+                  />
+                </svg>
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">TicketFast</h1>
+              <p className="text-white/70">
+                Gestiona tus tickets de forma rápida y eficiente
+              </p>
+            </div>
 
-          {/* Footer */}
-          <div className="text-center mt-8">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              © 2024 TicketFast. Todos los derechos reservados.
-            </p>
-          </div>
+            <div className="transition-all duration-300 ease-in-out">
+              {currentView === 'login' && (
+                <LoginForm onSwitchToForgotPassword={switchToForgotPassword} />
+              )}
+
+              {currentView === 'forgot-password' && (
+                <ForgotPasswordForm onSwitchToLogin={switchToLogin} />
+              )}
+            </div>
+
+            <div className="text-center mt-4 sm:mt-6">
+              <p className="text-xs sm:text-sm text-white/60">
+                © 2024 TicketFast. Todos los derechos reservados.
+              </p>
+            </div>
+          </section>
         </div>
       </div>
     </div>
