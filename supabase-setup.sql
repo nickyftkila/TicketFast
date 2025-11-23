@@ -201,19 +201,75 @@ ALTER TABLE ticket_responses ENABLE ROW LEVEL SECURITY;
 
 
 
--- CORREGIDO: Quitado IF NOT EXISTS (no es válido en CREATE POLICY)
-CREATE POLICY "Allow all authenticated users to manage users" ON users
-  FOR ALL USING (auth.role() = 'authenticated');
+-- POLÍTICAS RLS SEGURAS - Restricción por usuario y rol
 
+-- USERS: Los usuarios solo pueden ver y modificar su propio perfil
+CREATE POLICY "Users can view their own profile" ON users
+  FOR SELECT USING (auth.uid() = id);
 
+CREATE POLICY "Users can update their own profile" ON users
+  FOR UPDATE USING (auth.uid() = id);
 
-CREATE POLICY "Allow all authenticated users to manage tickets" ON tickets
-  FOR ALL USING (auth.role() = 'authenticated');
+-- TICKETS: Políticas específicas por operación y rol
+-- Los usuarios pueden crear tickets
+CREATE POLICY "Users can create tickets" ON tickets
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND auth.uid() = created_by);
 
+-- Los usuarios pueden ver sus propios tickets
+CREATE POLICY "Users can view their own tickets" ON tickets
+  FOR SELECT USING (
+    auth.role() = 'authenticated' AND 
+    (auth.uid() = created_by OR 
+     EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support'))
+  );
 
+-- Los usuarios pueden actualizar sus propios tickets (solo descripción, tags, is_urgent)
+CREATE POLICY "Users can update their own tickets" ON tickets
+  FOR UPDATE USING (
+    auth.role() = 'authenticated' AND 
+    auth.uid() = created_by AND
+    -- Solo permitir actualizar campos específicos, no el estado
+    (OLD.status = NEW.status)
+  );
 
-CREATE POLICY "Allow all authenticated users to manage responses" ON ticket_responses
-  FOR ALL USING (auth.role() = 'authenticated');
+-- Support puede actualizar el estado de cualquier ticket
+CREATE POLICY "Support can update ticket status" ON tickets
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support')
+  ) WITH CHECK (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support')
+  );
+
+-- TICKET_RESPONSES: Políticas específicas
+-- Los usuarios pueden crear respuestas en sus propios tickets
+CREATE POLICY "Users can create responses to their tickets" ON ticket_responses
+  FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' AND
+    (
+      -- El usuario creó el ticket
+      EXISTS (SELECT 1 FROM tickets WHERE id = ticket_id AND created_by = auth.uid()) OR
+      -- O es support creando una respuesta
+      EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support')
+    )
+  );
+
+-- Los usuarios pueden ver respuestas de sus tickets
+CREATE POLICY "Users can view responses to their tickets" ON ticket_responses
+  FOR SELECT USING (
+    auth.role() = 'authenticated' AND
+    (
+      -- El usuario creó el ticket
+      EXISTS (SELECT 1 FROM tickets WHERE id = ticket_id AND created_by = auth.uid()) OR
+      -- O es support
+      EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support')
+    )
+  );
+
+-- Support puede actualizar cualquier respuesta
+CREATE POLICY "Support can update responses" ON ticket_responses
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'support')
+  );
 
 
 

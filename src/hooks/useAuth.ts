@@ -3,15 +3,68 @@
 import { useState, useEffect } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { safeLog } from '@/utils/logger';
+import { logSecurityEvent } from '@/utils/securityLogger';
+import { useAuthProfile } from './useAuthProfile';
 
 export function useAuth() {
+  // Usar el hook useAuthProfile para obtener el perfil de forma segura
+  const { profile, loading: profileLoading, error: profileError } = useAuthProfile();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
 
+  // Sincronizar el perfil del hook con el estado local
+  useEffect(() => {
+    safeLog('🔄 [useAuth] Sincronizando perfil:', {
+      profileLoading,
+      hasProfile: !!profile,
+      profileId: profile?.id,
+      profileError: profileError || null
+    });
+    
+    // Si hay error en el perfil, verificar si es un error recuperable
+    if (profileError) {
+      const errorMessage = profileError || '';
+      
+      // Si el error indica que el usuario existe pero está desincronizado, 
+      // NO establecer user como null - dejar que el usuario vea el error pero mantenga la sesión
+      if (errorMessage.includes('desincronizado') || errorMessage.includes('fix-user-ids.sql')) {
+        safeLog('⚠️ [useAuth] Error de sincronización - usuario necesita ejecutar script SQL');
+        // Mantener user como null pero mostrar el error claramente
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      
+      // Para otros errores, también establecer como null
+      safeLog('⚠️ [useAuth] Error al cargar perfil:', profileError);
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    
+    // Si ya terminó de cargar (ya sea con o sin perfil)
+    if (!profileLoading) {
+      setUser(profile);
+      setLoading(false);
+      safeLog('✅ [useAuth] Perfil sincronizado:', {
+        userId: profile?.id,
+        email: profile?.email,
+        role: profile?.role,
+        hasUser: !!profile
+      });
+    } else {
+      // Si aún está cargando, mantener el estado de loading
+      safeLog('⏳ [useAuth] Perfil aún cargando...');
+    }
+  }, [profile, profileLoading, profileError]);
+
   useEffect(() => {
     // Verificar si hay parámetros de recovery en la URL
+    if (typeof window === 'undefined') return;
+    
     const hash = window.location.hash;
     if (hash.includes('type=recovery')) {
       // Redirigir a la página de reset de contraseña
@@ -19,26 +72,12 @@ export function useAuth() {
       return;
     }
 
-    // Obtener sesión inicial
-    const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await fetchUserProfile(session.user.email!);
-      } else {
-        setUser(null);
-        setLoading(false);
-      }
-    };
-
-    getInitialSession();
-
-    // Escuchar cambios de autenticación
+    // Escuchar cambios de autenticación para redirecciones
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth event:', event, session?.user?.email);
+        safeLog('🔄 [useAuth] Auth event:', event, session?.user?.email);
         
-        if (event === 'SIGNED_IN' && session?.user) {
-          await fetchUserProfile(session.user.email!);
+        if (event === 'SIGNED_IN' && session?.user?.email) {
           // Redirigir según el tipo de usuario después del login exitoso
           if (session.user.email === 'kei.martinez@duocuc.cl') {
             router.push('/');
@@ -46,44 +85,20 @@ export function useAuth() {
             router.push('/tickets');
           }
         } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setLoading(false);
+          safeLog('👋 [useAuth] Usuario cerró sesión');
           // Redirigir al login cuando se cierra sesión
           router.push('/');
-        } else if (event === 'PASSWORD_RECOVERY') {
-          // Durante el reset de contraseña, no hacer nada especial
-          setLoading(false);
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Actualizar perfil cuando se refresca el token
-          await fetchUserProfile(session.user.email!);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [router]);
 
-  const fetchUserProfile = async (email: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
-
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        setLoading(false);
-        return;
-      }
-
-      setUser(data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error in fetchUserProfile:', error);
-      setLoading(false);
-    }
-  };
+  // La función fetchUserProfile ya no es necesaria
+  // useAuthProfile se encarga de obtener el perfil de forma segura
 
   const login = async (email: string, password: string) => {
     try {
@@ -94,20 +109,48 @@ export function useAuth() {
       });
 
       if (error) {
-        // Convertir el error de Supabase a Error estándar
-        const errorMessage = error.message || 'Error al iniciar sesión';
-        return { data: null, error: new Error(errorMessage) };
+        // Mensaje genérico para evitar information disclosure
+        // No revelar si el email existe o no, ni el tipo específico de error
+        const genericErrorMessage = 'Email o contraseña incorrectos';
+        
+        // Log del error real para debugging (solo en desarrollo)
+        safeLog('Login error:', { 
+          code: error.status, 
+          message: error.message,
+          email: email.substring(0, 3) + '***' // Solo primeros 3 caracteres para logs
+        });
+        
+        // Registrar evento de seguridad (asíncrono para no bloquear)
+        logSecurityEvent('login_failed', {
+          email,
+          details: {
+            errorCode: error.status,
+            errorMessage: error.message,
+          },
+        });
+        
+        setLoading(false);
+        return { data: null, error: new Error(genericErrorMessage) };
       }
 
+      // Log de login exitoso (solo en desarrollo, sin información sensible)
+      safeLog('Login exitoso para:', email.substring(0, 3) + '***');
+      
+      // Registrar evento de seguridad (asíncrono para no bloquear)
+      logSecurityEvent('login_success', {
+        email,
+        userId: data.user?.id,
+      });
+      
+      // No esperar a que el perfil se cargue - dejar que useAuthProfile lo maneje
+      // Esto hace que el login responda más rápido
+      setLoading(false);
       return { data, error: null };
     } catch (error: unknown) {
-      // Manejar errores inesperados
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'Error desconocido al iniciar sesión';
-      return { data: null, error: new Error(errorMessage) };
-    } finally {
+      // Manejar errores inesperados con mensaje genérico
+      safeLog('Error inesperado en login:', error);
       setLoading(false);
+      return { data: null, error: new Error('Error al iniciar sesión. Por favor, intenta nuevamente.') };
     }
   };
 
@@ -130,22 +173,11 @@ export function useAuth() {
         return { data: null, error: new Error(errorMessage) };
       }
 
-      // Crear el registro en la tabla users después del registro exitoso
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            email: data.user.email!,
-            full_name: fullName,
-            role: 'user' // Por defecto todos son 'user'
-          });
-
-        if (profileError) {
-          console.error('Error creando perfil de usuario:', profileError);
-          // No fallamos el registro si solo falla la creación del perfil
-          // El usuario puede actualizar su perfil después
-        }
-      }
+      // NOTA: NO intentamos crear el usuario manualmente aquí porque hay un trigger
+      // en Supabase (`handle_new_user()`) que crea automáticamente el registro en la tabla
+      // `users` cuando se registra un usuario en `auth.users`. Intentar crear manualmente
+      // causaría un error 409 Conflict porque el usuario ya existe.
+      // El hook `useAuthProfile` se encargará de obtener el perfil cuando esté disponible.
 
       return { data, error: null };
     } catch (error: unknown) {
@@ -161,6 +193,11 @@ export function useAuth() {
 
   const forgotPassword = async (email: string) => {
     try {
+      // Verificar que estamos en el cliente antes de usar window
+      if (typeof window === 'undefined') {
+        return { data: null, error: new Error('Este método solo está disponible en el cliente'), waitSeconds: undefined };
+      }
+      
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -168,21 +205,70 @@ export function useAuth() {
       if (error) {
         // Detectar errores de conexión o autenticación
         let errorMessage = error.message || 'Error al enviar correo de recuperación';
+        let waitSeconds: number | undefined = undefined;
         
-        // Mensajes más descriptivos para errores comunes
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
+        // Obtener el status del error (puede estar en diferentes propiedades)
+        const errorStatus = (error as any).status || (error as any).statusCode || (error as any).code;
+        const errorMsg = error.message || '';
+        
+        // Detectar error 429 (rate limit) de múltiples formas
+        const isRateLimit = 
+          errorStatus === 429 || 
+          errorMsg.includes('For security purposes') ||
+          errorMsg.includes('rate limit') ||
+          errorMsg.includes('too many requests') ||
+          errorMsg.toLowerCase().includes('429');
+        
+        if (isRateLimit) {
+          // Intentar extraer el número de segundos del mensaje de múltiples formas:
+          // "you can only request this after X seconds"
+          // "For security purposes, you can only request this after X seconds"
+          // "wait X seconds"
+          const patterns = [
+            /(\d+)\s*seconds?/i,
+            /after\s+(\d+)\s*seconds?/i,
+            /wait\s+(\d+)\s*seconds?/i,
+            /(\d+)\s*segundos?/i,
+            /espera\s+(\d+)\s*segundos?/i,
+          ];
+          
+          for (const pattern of patterns) {
+            const match = errorMsg.match(pattern);
+            if (match) {
+              waitSeconds = parseInt(match[1], 10);
+              if (waitSeconds > 0 && waitSeconds < 3600) { // Validar que sea un número razonable
+                errorMessage = `Por seguridad, debes esperar ${waitSeconds} segundos antes de solicitar otro enlace de recuperación.`;
+                break;
+              }
+            }
+          }
+          
+          // Si no se pudo extraer el tiempo, usar un mensaje genérico
+          if (waitSeconds === undefined) {
+            errorMessage = 'Demasiados intentos. Por favor, espera unos minutos antes de intentar nuevamente.';
+            // Establecer un tiempo de espera por defecto de 60 segundos si no se puede extraer
+            waitSeconds = 60;
+          }
+        } else if (errorMsg.includes('Invalid API key') || errorMsg.includes('JWT')) {
           errorMessage = 'Error de configuración: Las credenciales de Supabase no son válidas. Por favor, verifica tu configuración.';
-        } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+        } else if (errorMsg.includes('fetch') || errorMsg.includes('network')) {
           errorMessage = 'Error de conexión: No se pudo conectar con el servidor. Verifica tu conexión a internet.';
-        } else if (error.message?.includes('Email rate limit')) {
+        } else if (errorMsg.includes('Email rate limit')) {
           errorMessage = 'Demasiados intentos. Por favor, espera unos minutos antes de intentar nuevamente.';
+          waitSeconds = 60; // Tiempo por defecto
         }
         
-        console.error('Error en forgotPassword:', error);
-        return { data: null, error: new Error(errorMessage) };
+        console.error('Error en forgotPassword:', {
+          error,
+          status: errorStatus,
+          message: errorMsg,
+          waitSeconds
+        });
+        
+        return { data: null, error: new Error(errorMessage), waitSeconds };
       }
 
-      return { data, error: null };
+      return { data, error: null, waitSeconds: undefined };
     } catch (error: unknown) {
       // Manejar errores de red o conexión (especialmente "Failed to fetch")
       let errorMessage = 'Error desconocido al enviar correo de recuperación';
@@ -202,7 +288,7 @@ export function useAuth() {
       }
       
       console.error('Error inesperado en forgotPassword:', error);
-      return { data: null, error: new Error(errorMessage) };
+      return { data: null, error: new Error(errorMessage), waitSeconds: undefined };
     }
   };
 

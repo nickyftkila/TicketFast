@@ -1,10 +1,10 @@
   'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Loader2, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Mail, Loader2, ArrowLeft, CheckCircle, Clock } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 const forgotPasswordSchema = z.object({
@@ -20,7 +20,26 @@ interface ForgotPasswordFormProps {
 export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [waitSeconds, setWaitSeconds] = useState<number | null>(null);
   const { forgotPassword } = useAuth();
+
+  // Contador regresivo para el tiempo de espera
+  useEffect(() => {
+    if (waitSeconds === null || waitSeconds <= 0) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setWaitSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [waitSeconds]);
 
   const {
     register,
@@ -32,21 +51,40 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
   });
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
+    if (waitSeconds !== null && waitSeconds > 0) {
+      console.log('⏸️ Bloqueado: tiempo de espera activo', waitSeconds);
+      return; // No permitir envío si hay tiempo de espera activo
+    }
+
     setIsSubmitting(true);
+    setError('root', { type: 'manual', message: '' }); // Limpiar errores previos
+    setWaitSeconds(null); // Limpiar tiempo de espera previo
     
     try {
-      const { error } = await forgotPassword(data.email);
+      const result = await forgotPassword(data.email);
+      console.log('📧 Resultado de forgotPassword:', { 
+        hasError: !!result.error, 
+        waitSeconds: result.waitSeconds,
+        errorMessage: result.error?.message 
+      });
       
-      if (error) {
+      if (result.error) {
+        // Si hay tiempo de espera, establecerlo PRIMERO
+        if (result.waitSeconds !== undefined && result.waitSeconds > 0) {
+          console.log('⏱️ Estableciendo tiempo de espera:', result.waitSeconds);
+          setWaitSeconds(result.waitSeconds);
+        }
+        
         setError('root', {
           type: 'manual',
-          message: error instanceof Error ? error.message : 'Error desconocido',
+          message: result.error instanceof Error ? result.error.message : 'Error desconocido',
         });
       } else {
         setIsSuccess(true);
+        setWaitSeconds(null); // Limpiar tiempo de espera en caso de éxito
       }
     } catch (error: unknown) {
-      console.error('Error inesperado en recuperación de contraseña:', error);
+      console.error('❌ Error inesperado en recuperación de contraseña:', error);
       setError('root', {
         type: 'manual',
         message: 'Error inesperado al enviar email de recuperación',
@@ -129,16 +167,33 @@ export default function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFo
             </div>
           )}
 
+          {/* Wait Time Message */}
+          {waitSeconds !== null && waitSeconds > 0 && (
+            <div className="bg-yellow-900/20 border border-yellow-600/40 rounded-lg p-4">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-yellow-400" />
+                <p className="text-sm text-yellow-300">
+                  Por seguridad, debes esperar <span className="font-bold">{waitSeconds}</span> segundo{waitSeconds !== 1 ? 's' : ''} antes de solicitar otro enlace.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-[linear-gradient(90deg,#000000,#00b41d)] border border-[#00b41d] hover:opacity-90 disabled:opacity-60 text-white font-semibold py-3 px-4 rounded-2xl transition-opacity duration-200 flex items-center justify-center shadow-card-soft"
+            disabled={isSubmitting || (waitSeconds !== null && waitSeconds > 0)}
+            className="w-full bg-[linear-gradient(90deg,#000000,#00b41d)] border border-[#00b41d] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-2xl transition-opacity duration-200 flex items-center justify-center shadow-card-soft"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="animate-spin -ml-1 mr-3 h-5 w-5" />
                 Enviando Email...
+              </>
+            ) : waitSeconds !== null && waitSeconds > 0 ? (
+              <>
+                <Clock className="animate-pulse -ml-1 mr-3 h-5 w-5" />
+                Espera {waitSeconds}s...
               </>
             ) : (
               'Enviar Email de Recuperación'

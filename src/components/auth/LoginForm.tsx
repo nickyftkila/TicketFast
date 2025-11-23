@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { checkRateLimit, getRateLimitRemaining, clearRateLimit } from '@/utils/rateLimit';
+import { logSecurityEvent } from '@/utils/securityLogger';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -33,6 +35,28 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
   });
 
   const onSubmit = async (data: LoginFormData) => {
+    // Rate limiting: máximo 5 intentos por minuto
+    const rateLimitKey = `login-${data.email}`;
+    if (!checkRateLimit(rateLimitKey, 5, 60000)) {
+      const remaining = getRateLimitRemaining(rateLimitKey);
+      const seconds = Math.ceil(remaining / 1000);
+      
+      // Registrar evento de seguridad
+      logSecurityEvent('rate_limit_exceeded', {
+        email: data.email,
+        details: {
+          action: 'login',
+          remainingSeconds: seconds,
+        },
+      });
+      
+      setError('root', {
+        type: 'manual',
+        message: `Demasiados intentos. Por favor, espera ${seconds} segundos antes de intentar nuevamente.`,
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
@@ -43,6 +67,9 @@ export default function LoginForm({ onSwitchToForgotPassword }: LoginFormProps) 
           type: 'manual',
           message: error instanceof Error ? error.message : 'Error desconocido',
         });
+      } else {
+        // Si el login fue exitoso, limpiar el rate limit
+        clearRateLimit(rateLimitKey);
       }
       // Si no hay error, la redirección se maneja en el hook
     } catch (error: unknown) {

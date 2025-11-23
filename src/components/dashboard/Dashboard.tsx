@@ -2,12 +2,15 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import { useTickets, TicketResponseWithUser, TicketWithUser, PriorityLevel } from '@/hooks/useTickets';
-import { supabase } from '@/lib/supabase';
-import { LogOut, User, Ticket as TicketIcon, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft, PlayCircle } from 'lucide-react';
+import { LogOut, User, Ticket as TicketIcon, AlertCircle, Tag, ChevronDown, X, FileText, Send, Clock, CheckCircle, Loader2, Filter, MessageSquare, ArrowLeft, PlayCircle, Image as ImageIcon } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useToast } from '@/components/ui/Toast';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { escapeHtml } from '@/utils/sanitize';
+import { safeLog } from '@/utils/logger';
+import { checkRateLimit, getRateLimitRemaining } from '@/utils/rateLimit';
+import { logSecurityEvent } from '@/utils/securityLogger';
 // import ConnectionStatus from '@/components/ui/ConnectionStatus';
 
 export default function Dashboard() {
@@ -18,13 +21,42 @@ export default function Dashboard() {
     createTicket, 
     uploadImage, 
     clearError,
-    fetchTicketResponses
-  } = useTickets();
+    fetchTicketResponses,
+    createTicketResponse,
+    refreshTickets
+  } = useTickets(user ? { id: user.id, role: user.role } : null);
   const { addToast, ToastContainer } = useToast();
   
-  // DEBUG: Log para ver qué datos llegan
-  console.log('🔍 Dashboard - User:', user);
-  console.log('🔍 Dashboard - User email:', user?.email);
+  // DEBUG: Log cuando el componente se renderiza
+  useEffect(() => {
+    safeLog('🎨 [Dashboard] Componente renderizado', {
+      hasUser: !!user,
+      userId: user?.id,
+      userEmail: user?.email,
+      userRole: user?.role,
+      ticketsCount: tickets?.length || 0,
+      ticketsLoading
+    });
+  }, [user, tickets, ticketsLoading]);
+  
+  // Recargar tickets cuando el usuario cambie
+  useEffect(() => {
+    if (user?.id) {
+      safeLog('🔄 [Dashboard] Usuario disponible, recargando tickets', {
+        userId: user.id,
+        role: user.role,
+        ticketsLoading
+      });
+      // No esperar a que ticketsLoading sea false, el hook useTickets ya maneja esto
+      refreshTickets();
+    } else {
+      safeLog('⚠️ [Dashboard] No hay usuario disponible aún', {
+        userIsNull: user === null,
+        userIsUndefined: user === undefined
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role]); // Dependemos del ID y rol del usuario
 
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -38,6 +70,10 @@ export default function Dashboard() {
   const [ticketResponses, setTicketResponses] = useState<TicketResponseWithUser[]>([]);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [showTicketsDrawer, setShowTicketsDrawer] = useState(false);
+  const [responseMessage, setResponseMessage] = useState('');
+  const [sendingResponse, setSendingResponse] = useState(false);
+  const [responseImage, setResponseImage] = useState<File | null>(null);
+  const [responseImagePreview, setResponseImagePreview] = useState<string | null>(null);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   // Refs para sincronizar alturas
@@ -106,82 +142,101 @@ export default function Dashboard() {
 
   // Filtrar tickets del usuario actual por estado
   const userTickets = useMemo(() => {
-    if (!user || !tickets) return [];
-    const filtered = tickets.filter(ticket => ticket.created_by === user.id);
-    if (statusFilter === 'all') return filtered;
-    return filtered.filter(ticket => ticket.status === statusFilter);
-  }, [tickets, user, statusFilter]);
+    // DEBUG: Log detallado para entender el estado
+    safeLog('🔍 [Dashboard] Calculando userTickets:', {
+      hasUser: !!user,
+      userId: user?.id,
+      userRole: user?.role,
+      ticketsCount: tickets?.length || 0,
+      ticketsLoading,
+      statusFilter
+    });
+
+    if (!user) {
+      safeLog('⚠️ [Dashboard] No hay usuario para filtrar tickets');
+      return [];
+    }
+    if (!tickets || tickets.length === 0) {
+      safeLog('⚠️ [Dashboard] No hay tickets disponibles:', { 
+        ticketsLength: tickets?.length || 0,
+        userId: user.id,
+        ticketsArray: tickets
+      });
+      return [];
+    }
+    
+    safeLog(`🔍 [Dashboard] Filtrando tickets:`, { 
+      totalTickets: tickets.length,
+      userId: user.id,
+      userRole: user.role,
+      statusFilter,
+      ticketCreatedBy: tickets.map(t => ({ id: t.id, created_by: t.created_by }))
+    });
+    
+    const filtered = tickets.filter(ticket => {
+      const matches = ticket.created_by === user.id;
+      if (!matches) {
+        safeLog(`⚠️ [Dashboard] Ticket no coincide con usuario:`, {
+          ticketId: ticket.id,
+          ticketCreatedBy: ticket.created_by,
+          userId: user.id,
+          match: matches
+        });
+      }
+      return matches;
+    });
+    
+    safeLog(`✅ [Dashboard] Tickets filtrados por usuario:`, { 
+      filteredCount: filtered.length,
+      userId: user.id,
+      filteredTicketIds: filtered.map(t => t.id)
+    });
+    
+    if (statusFilter === 'all') {
+      safeLog(`📊 [Dashboard] Mostrando todos los tickets: ${filtered.length}`);
+      return filtered;
+    }
+    
+    const statusFiltered = filtered.filter(ticket => ticket.status === statusFilter);
+    safeLog(`📊 [Dashboard] Tickets filtrados por estado ${statusFilter}: ${statusFiltered.length}`, {
+      filteredStatusTicketIds: statusFiltered.map(t => t.id)
+    });
+    return statusFiltered;
+  }, [tickets, user, statusFilter, ticketsLoading]);
 
   // Cargar respuestas cuando se selecciona un ticket
   const handleTicketClick = async (ticket: TicketWithUser) => {
     setSelectedTicket(ticket);
     setLoadingResponses(true);
     setTicketResponses([]);
+    // Limpiar formulario de respuesta al cambiar de ticket
+    setResponseMessage('');
+    setResponseImage(null);
+    setResponseImagePreview(null);
     try {
       console.log('🔍 [Dashboard] Cargando respuestas para ticket:', ticket.id);
       
-      // Consulta directa sin join primero para verificar
-      const { data: directData, error: directError } = await supabase
-        .from('ticket_responses')
-        .select('*')
-        .eq('ticket_id', ticket.id)
-        .order('created_at', { ascending: true });
+      // Usar el método del hook que ya tiene la lógica correcta
+      const { data, error } = await fetchTicketResponses(ticket.id);
       
-      console.log('📊 [Dashboard] Consulta directa:', { 
-        count: directData?.length || 0, 
-        data: directData, 
-        error: directError 
-      });
-      
-      if (directError) {
-        console.error('❌ [Dashboard] Error en consulta directa:', directError);
+      if (error) {
+        console.error('❌ [Dashboard] Error al cargar respuestas:', error);
         addToast({
           type: 'error',
           title: 'Error al cargar respuestas',
-          message: directError.message || 'No se pudieron cargar las respuestas del ticket',
+          message: error.message || 'No se pudieron cargar las respuestas del ticket',
           duration: 5000
         });
         setTicketResponses([]);
         return;
       }
       
-      // Si hay datos, intentar obtener la información del usuario
-      if (directData && directData.length > 0) {
-        console.log(`✅ [Dashboard] Se encontraron ${directData.length} respuestas`);
-
-        const responses = (directData as TicketResponseWithUser[]) ?? [];
-        const responsesWithUsers = await Promise.all(
-          responses.map(async (response): Promise<TicketResponseWithUser> => {
-            try {
-              const { data: userData } = await supabase
-                .from('users')
-                .select('full_name, email, role')
-                .eq('id', response.created_by)
-                .single();
-
-              return {
-                ...response,
-                users: userData || null
-              };
-            } catch (err) {
-              console.warn('⚠️ [Dashboard] No se pudo obtener usuario para respuesta:', response.id, err);
-              return response;
-            }
-          })
-        );
-        
-        console.log('📥 [Dashboard] Respuestas con usuarios:', responsesWithUsers);
-        setTicketResponses(responsesWithUsers);
+      if (data && data.length > 0) {
+        console.log(`✅ [Dashboard] Se encontraron ${data.length} respuestas`);
+        setTicketResponses(data);
       } else {
         console.log('ℹ️ [Dashboard] No hay respuestas para este ticket');
         setTicketResponses([]);
-      }
-      
-      // También intentar con el método original por si acaso
-      const { data, error } = await fetchTicketResponses(ticket.id);
-      if (!error && data && data.length > 0) {
-        console.log('✅ [Dashboard] Método original también funcionó');
-        setTicketResponses(data);
       }
     } catch (error) {
       console.error('💥 [Dashboard] Error cargando respuestas:', error);
@@ -212,13 +267,13 @@ export default function Dashboard() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300';
+        return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50';
       case 'in_progress':
-        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
+        return 'bg-blue-900/30 text-blue-300 border-blue-700/50';
       case 'resolved':
-        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
+        return 'bg-green-900/30 text-green-300 border-green-700/50';
       default:
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300';
+        return 'bg-gray-700 text-gray-300 border-gray-600/50';
     }
   };
 
@@ -264,11 +319,11 @@ export default function Dashboard() {
   const getPriorityStyle = (level: PriorityLevel) => {
     switch (level) {
       case 'high':
-        return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700';
+        return 'bg-red-900/30 text-red-300 border-red-700';
       case 'medium':
-        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700';
+        return 'bg-yellow-900/30 text-yellow-300 border-yellow-700';
       default:
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700';
+        return 'bg-gray-800 text-gray-300 border-gray-700';
     }
   };
 
@@ -316,8 +371,22 @@ export default function Dashboard() {
       return;
     }
 
+    // Validar longitud máxima de descripción (5000 caracteres)
+    const MAX_DESCRIPTION_LENGTH = 5000;
+    if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      setError(`La descripción no puede exceder ${MAX_DESCRIPTION_LENGTH} caracteres. Actual: ${description.trim().length}`);
+      return;
+    }
+
     if (selectedTags.length === 0) {
       setError('Por favor, selecciona al menos una etiqueta');
+      return;
+    }
+
+    // Validar que todos los tags seleccionados estén en la lista permitida
+    const invalidTags = selectedTags.filter(tag => !availableTags.includes(tag));
+    if (invalidTags.length > 0) {
+      setError(`Etiquetas no válidas detectadas: ${invalidTags.join(', ')}`);
       return;
     }
 
@@ -326,18 +395,27 @@ export default function Dashboard() {
       return;
     }
 
+    // Rate limiting: máximo 10 tickets por minuto por usuario
+    const rateLimitKey = `create-ticket-${user.id}`;
+    if (!checkRateLimit(rateLimitKey, 10, 60000)) {
+      const remaining = getRateLimitRemaining(rateLimitKey);
+      const seconds = Math.ceil(remaining / 1000);
+      setError(`Demasiados tickets creados. Por favor, espera ${seconds} segundos antes de crear otro.`);
+      return;
+    }
+
     setIsSubmitting(true);
-    console.log('🚀 Iniciando envío de ticket...');
+    safeLog('🚀 Iniciando envío de ticket...');
 
     try {
       let imageUrl = null;
       
       // Subir imagen si existe
       if (imageFile) {
-        console.log('📸 Subiendo imagen...');
+        safeLog('📸 Subiendo imagen...');
         try {
           imageUrl = await uploadImage(imageFile);
-          console.log('✅ Imagen subida exitosamente:', imageUrl);
+          safeLog('✅ Imagen subida exitosamente');
         } catch (uploadError) {
           console.error('Error al subir imagen:', uploadError);
           throw uploadError; // Propagar el error para que se maneje en el catch principal
@@ -358,13 +436,13 @@ export default function Dashboard() {
       }
 
       // Limpiar formulario
-      console.log('🧹 Limpiando formulario...');
+      safeLog('🧹 Limpiando formulario...');
       setDescription('');
       setSelectedTags([]);
       setIsUrgent(false);
       setImageFile(null);
 
-      console.log('🎉 ¡Ticket enviado exitosamente!');
+      safeLog('🎉 ¡Ticket enviado exitosamente!');
       
       // La lista ya se actualizó optimísticamente en el hook
       addToast({
@@ -467,7 +545,13 @@ export default function Dashboard() {
 
           {ticketsLoading ? (
             <div className="flex items-center justify-center flex-1 py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-[#00b41d]" />
+              <span className="ml-2 text-sm text-white/60">Cargando tickets...</span>
+            </div>
+          ) : !user ? (
+            <div className="text-center flex-1 flex flex-col items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-[#00b41d] mx-auto mb-3" />
+              <p className="text-sm text-white/60">Cargando información del usuario...</p>
             </div>
           ) : userTickets.length === 0 ? (
             <div className="text-center flex-1 flex flex-col items-center justify-center py-8">
@@ -478,6 +562,14 @@ export default function Dashboard() {
                   : `No tienes tickets ${getStatusText(statusFilter).toLowerCase()}`
                 }
               </p>
+              {/* DEBUG: Mostrar información de depuración en desarrollo */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mt-4 text-xs text-white/40 space-y-1">
+                  <p>Debug: tickets totales = {tickets?.length || 0}</p>
+                  <p>Debug: user.id = {user?.id || 'null'}</p>
+                  <p>Debug: ticketsLoading = {ticketsLoading ? 'true' : 'false'}</p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3 flex-1 overflow-y-auto pr-2 min-h-0 subtle-scroll">
@@ -496,7 +588,7 @@ export default function Dashboard() {
                           <span className="ml-1">{getStatusText(ticket.status)}</span>
                         </span>
                         {ticket.is_urgent && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-900/30 text-orange-300 border border-orange-700/50">
                             <AlertCircle className="h-3 w-3 mr-1" />
                             Urgente
                           </span>
@@ -509,7 +601,7 @@ export default function Dashboard() {
                   </div>
 
                   <p className="text-sm text-white/80 line-clamp-2 mb-2">
-                    {ticket.description}
+                    {escapeHtml(ticket.description)}
                   </p>
 
                   {ticket.tags && ticket.tags.length > 0 && (
@@ -559,6 +651,10 @@ export default function Dashboard() {
           onClick={() => {
             setSelectedTicket(null);
             setTicketResponses([]);
+            // Limpiar formulario de respuesta
+            setResponseMessage('');
+            setResponseImage(null);
+            setResponseImagePreview(null);
           }}
           className="flex items-center text-sm text-white/70 hover:text-white mb-4 transition-colors flex-shrink-0"
         >
@@ -573,7 +669,7 @@ export default function Dashboard() {
               <span className="ml-1">{getStatusText(selectedTicket.status)}</span>
             </span>
             {selectedTicket.is_urgent && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300">
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-900/30 text-orange-300 border border-orange-700/50">
                 <AlertCircle className="h-3 w-3 mr-1" />
                 Urgente
               </span>
@@ -587,7 +683,7 @@ export default function Dashboard() {
         <div className="mb-4 p-3 bg-white/5 rounded-2xl border border-white/15 flex-shrink-0 shadow-inner">
           <p className="text-sm font-medium text-white mb-2">Descripción:</p>
           <p className="text-sm text-white/85 whitespace-pre-wrap">
-            {selectedTicket.description}
+            {escapeHtml(selectedTicket.description)}
           </p>
         </div>
 
@@ -652,7 +748,7 @@ export default function Dashboard() {
 
           {loadingResponses ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
+              <Loader2 className="h-5 w-5 animate-spin text-[#00b41d]" />
             </div>
           ) : ticketResponses.length === 0 ? (
             <div className="text-center py-8">
@@ -686,7 +782,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <p className="text-sm text-white/80 whitespace-pre-wrap">
-                    {response.message || '(Sin mensaje)'}
+                    {response.message ? escapeHtml(response.message) : '(Sin mensaje)'}
                   </p>
                   {!response.message && (
                     <p className="text-xs text-white/50 italic mt-1">
@@ -706,6 +802,258 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Formulario de respuesta - Solo mostrar si hay respuestas (soporte ya respondió) */}
+          {ticketResponses.length > 0 && selectedTicket && (
+            <div className="mt-6 border-t border-white/10 pt-4 flex-shrink-0">
+              <div className="mb-3">
+                <h4 className="text-sm font-bold text-white flex items-center mb-2">
+                  <Send className="h-4 w-4 mr-2" />
+                  Responder al soporte
+                </h4>
+                <p className="text-xs text-white/60">
+                  Escribe tu respuesta para continuar la conversación
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <textarea
+                  value={responseMessage}
+                  onChange={(e) => setResponseMessage(e.target.value)}
+                  placeholder="Escribe tu respuesta aquí..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-white/15 rounded-2xl bg-black/50 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#00b41d]/70 focus:border-[#00b41d]/60 resize-none transition-all"
+                />
+
+                {/* Preview de imagen */}
+                {responseImagePreview && (
+                  <div className="relative">
+                    <Image
+                      src={responseImagePreview}
+                      alt="Vista previa"
+                      width={200}
+                      height={150}
+                      className="rounded-xl border border-white/15 max-w-full h-auto"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResponseImage(null);
+                        setResponseImagePreview(null);
+                      }}
+                      className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-white/15 rounded-xl bg-black/50 text-sm text-white cursor-pointer hover:bg-black/70 transition-colors">
+                    <ImageIcon className="h-4 w-4" />
+                    <span>Adjuntar imagen</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // Validar tamaño (5MB)
+                          const maxSize = 5 * 1024 * 1024;
+                          if (file.size > maxSize) {
+                            addToast({
+                              type: 'error',
+                              title: 'Archivo demasiado grande',
+                              message: 'El tamaño máximo es 5MB',
+                              duration: 4000
+                            });
+                            return;
+                          }
+
+                          // Validar tipo
+                          const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                          if (!allowedTypes.includes(file.type)) {
+                            addToast({
+                              type: 'error',
+                              title: 'Tipo de archivo no permitido',
+                              message: 'Solo se permiten imágenes (JPEG, PNG, GIF, WebP)',
+                              duration: 4000
+                            });
+                            return;
+                          }
+
+                          setResponseImage(file);
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setResponseImagePreview(reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedTicket || !responseMessage.trim()) {
+                        addToast({
+                          type: 'error',
+                          title: 'Mensaje vacío',
+                          message: 'Por favor, escribe un mensaje antes de enviar',
+                          duration: 3000
+                        });
+                        return;
+                      }
+
+                      // Validar longitud
+                      const MAX_MESSAGE_LENGTH = 5000;
+                      if (responseMessage.trim().length > MAX_MESSAGE_LENGTH) {
+                        addToast({
+                          type: 'error',
+                          title: 'Mensaje demasiado largo',
+                          message: `El mensaje no puede exceder ${MAX_MESSAGE_LENGTH} caracteres`,
+                          duration: 4000
+                        });
+                        return;
+                      }
+
+                      setSendingResponse(true);
+                      
+                      // Limpiar formulario inmediatamente para mejor UX
+                      const messageToSend = responseMessage.trim();
+                      const imageToUpload = responseImage;
+                      setResponseMessage('');
+                      setResponseImage(null);
+                      setResponseImagePreview(null);
+
+                      // Actualización optimista: agregar respuesta temporal al estado
+                      const tempResponse: TicketResponseWithUser = {
+                        id: `temp-${Date.now()}`,
+                        ticket_id: selectedTicket.id,
+                        message: messageToSend,
+                        image_url: null, // Se actualizará después
+                        created_by: user?.id || '',
+                        is_support_response: false,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        users: {
+                          full_name: user?.full_name || 'Usuario',
+                          email: user?.email || '',
+                          role: user?.role || 'user'
+                        }
+                      };
+                      setTicketResponses(prev => [...prev, tempResponse]);
+
+                      try {
+                        let imageUrl: string | null = null;
+
+                        // Subir imagen si existe (en paralelo si es posible)
+                        if (imageToUpload) {
+                          try {
+                            imageUrl = await uploadImage(imageToUpload);
+                            // Actualizar la respuesta temporal con la URL de la imagen
+                            setTicketResponses(prev => 
+                              prev.map(r => 
+                                r.id === tempResponse.id 
+                                  ? { ...r, image_url: imageUrl } 
+                                  : r
+                              )
+                            );
+                          } catch (uploadError) {
+                            // Remover respuesta temporal si falla la subida
+                            setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+                            addToast({
+                              type: 'error',
+                              title: 'Error al subir imagen',
+                              message: uploadError instanceof Error ? uploadError.message : 'No se pudo subir la imagen',
+                              duration: 4000
+                            });
+                            setSendingResponse(false);
+                            // Restaurar formulario
+                            setResponseMessage(messageToSend);
+                            return;
+                          }
+                        }
+
+                        // Crear respuesta en el servidor
+                        const { data, error } = await createTicketResponse(
+                          selectedTicket.id,
+                          messageToSend,
+                          imageUrl
+                        );
+
+                        if (error) {
+                          // Remover respuesta temporal si falla
+                          setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+                          throw error;
+                        }
+
+                        // Reemplazar respuesta temporal con la real del servidor
+                        if (data) {
+                          setTicketResponses(prev => 
+                            prev.map(r => 
+                              r.id === tempResponse.id 
+                                ? { ...data, users: tempResponse.users } as TicketResponseWithUser
+                                : r
+                            )
+                          );
+                        } else {
+                          // Si no hay data, recargar todas las respuestas (fallback)
+                          const { data: allResponses } = await fetchTicketResponses(selectedTicket.id);
+                          setTicketResponses(allResponses || []);
+                        }
+
+                        addToast({
+                          type: 'success',
+                          title: 'Respuesta enviada',
+                          message: 'Tu respuesta ha sido enviada correctamente',
+                          duration: 2000
+                        });
+                      } catch (error) {
+                        console.error('Error al enviar respuesta:', error);
+                        // Remover respuesta temporal si hay error
+                        setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+                        // Restaurar formulario
+                        setResponseMessage(messageToSend);
+                        if (imageToUpload) {
+                          setResponseImage(imageToUpload);
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setResponseImagePreview(reader.result as string);
+                          };
+                          reader.readAsDataURL(imageToUpload);
+                        }
+                        addToast({
+                          type: 'error',
+                          title: 'Error',
+                          message: error instanceof Error ? error.message : 'No se pudo enviar la respuesta',
+                          duration: 4000
+                        });
+                      } finally {
+                        setSendingResponse(false);
+                      }
+                    }}
+                    disabled={!responseMessage.trim() || sendingResponse}
+                    className="flex-1 bg-[linear-gradient(90deg,#000000,#00b41d)] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 px-4 rounded-xl border border-[#00b41d] transition-opacity duration-200 flex items-center justify-center space-x-2"
+                  >
+                    {sendingResponse ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Enviando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        <span>Enviar respuesta</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -782,18 +1130,18 @@ export default function Dashboard() {
             >
           {/* Welcome Section */}
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            <h2 className="text-3xl font-bold text-white mb-2">
               ¡Bienvenido, {user?.full_name || user?.email || 'Usuario'}!
             </h2>
-            <p className="text-gray-600 dark:text-gray-400">
+            <p className="text-white/70">
               Crea un nuevo ticket para solicitar soporte técnico
             </p>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-600 dark:text-red-400">
+            <div className="mb-6 bg-red-900/20 border border-red-800 rounded-lg p-4">
+              <p className="text-sm text-red-300">
                 ❌ {error}
               </p>
             </div>

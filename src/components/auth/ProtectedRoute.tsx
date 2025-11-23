@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: 'user' | 'support';
+  requiredRole?: 'user' | 'support' | 'supervisor';
   redirectTo?: string;
 }
 
@@ -33,6 +33,8 @@ export default function ProtectedRoute({
           router.push('/');
         } else if (user.role === 'support') {
           router.push('/tickets');
+        } else if (user.role === 'supervisor') {
+          router.push('/supervisor');
         }
         return;
       }

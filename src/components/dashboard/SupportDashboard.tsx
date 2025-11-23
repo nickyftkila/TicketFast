@@ -8,6 +8,9 @@ import { useToast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { escapeHtml } from '@/utils/sanitize';
+import { logSecurityEvent } from '@/utils/securityLogger';
+import { safeLog } from '@/utils/logger';
 type TicketStatus = 'pending' | 'in_progress' | 'resolved';
 
 import { 
@@ -30,8 +33,24 @@ import {
 
 export default function SupportDashboard() {
   const { user, logout, loggingOut } = useAuth();
-  const { tickets, loading, updateTicketStatus, refreshTickets, fetchTicketResponses } = useTickets();
+  const { tickets, loading, updateTicketStatus, refreshTickets, fetchTicketResponses } = useTickets(user ? { id: user.id, role: user.role } : null);
   const { addToast, ToastContainer } = useToast();
+
+  // Recargar tickets cuando el usuario cambie
+  useEffect(() => {
+    if (user?.id) {
+      safeLog('🔄 [SupportDashboard] Usuario disponible, recargando tickets', {
+        userId: user.id,
+        role: user.role,
+        loading
+      });
+      // No esperar a que loading sea false, el hook useTickets ya maneja esto
+      refreshTickets();
+    } else {
+      safeLog('⚠️ [SupportDashboard] No hay usuario disponible aún');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role]);
 
   const [selectedTicket, setSelectedTicket] = useState<TicketWithUser | null>(null);
   const [ticketResponses, setTicketResponses] = useState<TicketResponseWithUser[]>([]);
@@ -47,12 +66,20 @@ export default function SupportDashboard() {
 
   // Calcular estadísticas
   const stats = useMemo(() => {
+    safeLog('📊 [SupportDashboard] Calculando estadísticas', {
+      totalTickets: tickets.length,
+      ticketStatuses: tickets.map(t => ({ id: t.id, status: t.status, is_urgent: t.is_urgent }))
+    });
+    
     const pending = tickets.filter(t => t.status === 'pending').length;
     const inProgress = tickets.filter(t => t.status === 'in_progress').length;
     const resolved = tickets.filter(t => t.status === 'resolved').length;
     const urgent = tickets.filter(t => t.is_urgent).length;
     
-    return { pending, inProgress, resolved, urgent, total: tickets.length };
+    const statsResult = { pending, inProgress, resolved, urgent, total: tickets.length };
+    safeLog('✅ [SupportDashboard] Estadísticas calculadas', statsResult);
+    
+    return statsResult;
   }, [tickets]);
 
   const ticketStats = [
@@ -65,14 +92,24 @@ export default function SupportDashboard() {
 
   // Filtrar tickets
   const filteredTickets = useMemo(() => {
+    safeLog('🔍 [SupportDashboard] Filtrando tickets', {
+      totalTickets: tickets.length,
+      statusFilter,
+      searchQuery,
+      userId: user?.id,
+      userRole: user?.role
+    });
+    
     let filtered: TicketWithUser[] = tickets;
 
     if (statusFilter !== 'all') {
       filtered = filtered.filter(t => t.status === statusFilter);
+      safeLog(`📊 [SupportDashboard] Filtrados por estado ${statusFilter}: ${filtered.length}`);
     }
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
+      const beforeSearch = filtered.length;
       filtered = filtered.filter((t) => {
         const matchesDescription = t.description.toLowerCase().includes(query);
         const matchesTags = t.tags.some(tag => tag.toLowerCase().includes(query));
@@ -80,14 +117,22 @@ export default function SupportDashboard() {
         const matchesEmail = t.users?.email?.toLowerCase().includes(query) ?? false;
         return matchesDescription || matchesTags || matchesName || matchesEmail;
       });
+      safeLog(`🔍 [SupportDashboard] Filtrados por búsqueda "${searchQuery}": ${filtered.length} de ${beforeSearch}`);
     }
 
-    return [...filtered].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       const scoreDiff = (b.autoPriority?.score ?? 0) - (a.autoPriority?.score ?? 0);
       if (scoreDiff !== 0) return scoreDiff;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [tickets, statusFilter, searchQuery]);
+    
+    safeLog('✅ [SupportDashboard] Tickets filtrados y ordenados', {
+      finalCount: sorted.length,
+      ticketIds: sorted.map(t => t.id)
+    });
+    
+    return sorted;
+  }, [tickets, statusFilter, searchQuery, user?.id, user?.role]);
 
   // Limpiar ticket seleccionado si no está en la lista filtrada
   useEffect(() => {
@@ -124,6 +169,26 @@ export default function SupportDashboard() {
 
   // Cambiar estado del ticket
   const handleStatusChange = async (ticketId: string, newStatus: TicketStatus) => {
+    // Validar que el usuario tenga rol de support
+    if (!user || user.role !== 'support') {
+      logSecurityEvent('unauthorized_access', {
+        userId: user?.id,
+        email: user?.email,
+        details: {
+          action: 'change_ticket_status',
+          ticketId,
+          attemptedStatus: newStatus,
+        },
+      });
+      addToast({
+        type: 'error',
+        title: 'Acceso denegado',
+        message: 'Solo usuarios con rol de support pueden cambiar el estado de tickets',
+        duration: 4000
+      });
+      return;
+    }
+
     // Prevenir múltiples cambios simultáneos
     if (updatingStatus) return;
 
@@ -175,63 +240,145 @@ export default function SupportDashboard() {
   const handleSendResponse = async () => {
     if (!selectedTicket || !responseMessage.trim()) return;
 
+    // Validar longitud máxima de mensaje (5000 caracteres)
+    const MAX_MESSAGE_LENGTH = 5000;
+    if (responseMessage.trim().length > MAX_MESSAGE_LENGTH) {
+      addToast({
+        type: 'error',
+        title: 'Mensaje demasiado largo',
+        message: `El mensaje no puede exceder ${MAX_MESSAGE_LENGTH} caracteres. Actual: ${responseMessage.trim().length}`,
+        duration: 5000
+      });
+      return;
+    }
+
     setSendingResponse(true);
+    
+    // Limpiar formulario inmediatamente para mejor UX
+    const messageToSend = responseMessage.trim();
+    const imageToUpload = responseImage;
+    setResponseMessage('');
+    setResponseImage(null);
+    setResponseImagePreview(null);
+
+    // Actualización optimista: agregar respuesta temporal al estado
+    const tempResponse: TicketResponseWithUser = {
+      id: `temp-${Date.now()}`,
+      ticket_id: selectedTicket.id,
+      message: messageToSend,
+      image_url: null,
+      created_by: user?.id || '',
+      is_support_response: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      users: {
+        full_name: user?.full_name || 'Soporte',
+        email: user?.email || '',
+        role: 'support'
+      }
+    };
+    setTicketResponses(prev => [...prev, tempResponse]);
+
     try {
-      let imageUrl = null;
+      let imageUrl: string | null = null;
       
       // Subir imagen si existe
-      if (responseImage) {
-        const fileExt = responseImage.name.split('.').pop();
+      if (imageToUpload) {
+        const fileExt = imageToUpload.name.split('.').pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
         const filePath = `ticket-images/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('ticket-images')
-          .upload(filePath, responseImage);
+          .upload(filePath, imageToUpload);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          // Remover respuesta temporal si falla la subida
+          setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+          throw uploadError;
+        }
 
         const { data: { publicUrl } } = supabase.storage
           .from('ticket-images')
           .getPublicUrl(filePath);
         
         imageUrl = publicUrl;
+        
+        // Actualizar respuesta temporal con la URL de la imagen
+        setTicketResponses(prev => 
+          prev.map(r => 
+            r.id === tempResponse.id 
+              ? { ...r, image_url: imageUrl } 
+              : r
+          )
+        );
       }
 
-      // Crear respuesta
-      const { error } = await supabase
+      // Crear respuesta en el servidor
+      const { data, error } = await supabase
         .from('ticket_responses')
         .insert({
           ticket_id: selectedTicket.id,
-          message: responseMessage.trim(),
+          message: messageToSend,
           image_url: imageUrl,
           created_by: user?.id,
           is_support_response: true
-        });
+        })
+        .select(`
+          *,
+          users:created_by (
+            full_name,
+            email,
+            role
+          )
+        `)
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        // Remover respuesta temporal si falla
+        setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+        throw error;
+      }
 
-      // Actualizar lista de respuestas
-      const { data } = await fetchTicketResponses(selectedTicket.id);
-      setTicketResponses(data || []);
-
-      // Limpiar formulario
-      setResponseMessage('');
-      setResponseImage(null);
-      setResponseImagePreview(null);
+      // Reemplazar respuesta temporal con la real del servidor
+      if (data) {
+        setTicketResponses(prev => 
+          prev.map(r => 
+            r.id === tempResponse.id 
+              ? { ...data, users: tempResponse.users } as TicketResponseWithUser
+              : r
+          )
+        );
+      } else {
+        // Fallback: recargar todas las respuestas
+        const { data: allResponses } = await fetchTicketResponses(selectedTicket.id);
+        setTicketResponses(allResponses || []);
+      }
 
       addToast({
         type: 'success',
         title: 'Respuesta enviada',
         message: 'Tu respuesta ha sido enviada correctamente',
-        duration: 3000
+        duration: 2000
       });
     } catch (error) {
       console.error('Error al enviar respuesta de soporte:', error);
+      // Remover respuesta temporal si hay error
+      setTicketResponses(prev => prev.filter(r => r.id !== tempResponse.id));
+      // Restaurar formulario
+      setResponseMessage(messageToSend);
+      if (imageToUpload) {
+        setResponseImage(imageToUpload);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setResponseImagePreview(reader.result as string);
+        };
+        reader.readAsDataURL(imageToUpload);
+      }
       addToast({
         type: 'error',
         title: 'Error',
-        message: 'No se pudo enviar la respuesta',
+        message: error instanceof Error ? error.message : 'No se pudo enviar la respuesta',
         duration: 4000
       });
     } finally {
@@ -534,7 +681,7 @@ export default function SupportDashboard() {
 
                         {/* Segunda fila: Descripción (1 línea) */}
                         <h3 className="text-sm font-semibold text-white mb-1.5 line-clamp-1 leading-tight">
-                          {ticket.description}
+                          {escapeHtml(ticket.description)}
                         </h3>
 
                         {/* Tercera fila: Usuario, Tag principal y Fecha en una línea */}
@@ -643,7 +790,7 @@ export default function SupportDashboard() {
                       </h2>
                       <div className="p-3 bg-white/5 rounded-2xl border border-white/15 shadow-inner">
                         <p className="text-sm text-white leading-relaxed whitespace-pre-wrap break-words">
-                          {selectedTicket.description}
+                          {escapeHtml(selectedTicket.description)}
                         </p>
                       </div>
                     </div>
@@ -748,7 +895,7 @@ export default function SupportDashboard() {
                                 </span>
                               </div>
                               <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-words mb-2">
-                                {response.message}
+                                {escapeHtml(response.message)}
                               </p>
                               {response.image_url && (
                                 <div className="mt-2 rounded-md overflow-hidden border border-white/15">
@@ -932,7 +1079,7 @@ export default function SupportDashboard() {
                   </h2>
                   <div className="p-3 bg-white/5 rounded-2xl border border-white/15">
                     <p className="text-sm text-white leading-relaxed whitespace-pre-wrap break-words">
-                      {selectedTicket.description}
+                      {escapeHtml(selectedTicket.description)}
                     </p>
                   </div>
                 </div>
@@ -1037,7 +1184,7 @@ export default function SupportDashboard() {
                             </span>
                           </div>
                           <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap break-words mb-2">
-                            {response.message}
+                            {escapeHtml(response.message)}
                           </p>
                           {response.image_url && (
                             <div className="mt-2 rounded-md overflow-hidden border border-white/10">

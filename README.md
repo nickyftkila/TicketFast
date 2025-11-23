@@ -2,7 +2,7 @@
 
 Una aplicación moderna de gestión de tickets construida con Next.js, React y TypeScript.
 
-⚠️ **NOTA**: Supabase ha sido eliminado del proyecto. El sistema de autenticación y base de datos necesita ser reemplazado.
+⚠️ **NOTA**: Este proyecto utiliza Supabase como backend para autenticación, base de datos y almacenamiento de archivos.
 
 ## 🚀 Características
 
@@ -48,23 +48,29 @@ Una aplicación moderna de gestión de tickets construida con Next.js, React y T
    http://localhost:3000
    ```
 
+## ⚙️ Configuración de Supabase
+
+Este proyecto requiere una instancia de Supabase configurada. Para configurarlo:
+
+1. **Crear un proyecto en Supabase** (https://supabase.com)
+2. **Configurar las variables de entorno** creando un archivo `.env.local`:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_clave_anonima
+   ```
+3. **Ejecutar el script de configuración** de la base de datos:
+   ```bash
+   # Ejecutar el contenido de supabase-setup.sql en tu proyecto de Supabase
+   ```
+
 ## ⚠️ Estado Actual
 
-**Supabase ha sido eliminado del proyecto**. Los siguientes componentes necesitan ser reemplazados:
+El proyecto está completamente funcional con Supabase:
 
-- Sistema de autenticación
-- Base de datos
-- Almacenamiento de archivos
-- Gestión de sesiones
-
-## 🔧 Próximos Pasos
-
-Para restaurar la funcionalidad completa, necesitarás:
-
-1. **Implementar un nuevo sistema de autenticación** (ej: NextAuth.js, Auth0, etc.)
-2. **Configurar una base de datos** (ej: PostgreSQL, MongoDB, etc.)
-3. **Actualizar los hooks** (`useAuth`, `useTickets`)
-4. **Reemplazar las llamadas a Supabase** en los componentes
+- ✅ Sistema de autenticación (login, registro, recuperación de contraseña)
+- ✅ Base de datos (usuarios, tickets, respuestas)
+- ✅ Almacenamiento de archivos (imágenes de tickets)
+- ✅ Gestión de sesiones
 
 ## 📁 Estructura del Proyecto
 
@@ -90,13 +96,12 @@ src/
 
 ## 🔧 Configuración Actual
 
-El proyecto actualmente funciona en modo simulación:
+El proyecto está completamente funcional:
 
-- **Autenticación**: Formularios funcionales pero sin backend
-- **Dashboard**: Interfaz completa pero sin persistencia de datos
-- **Tickets**: Formulario funcional pero sin almacenamiento
-
-Para probar el Dashboard, cambia `isAuthenticated` a `true` en `src/app/page.tsx`.
+- **Autenticación**: Sistema completo con Supabase Auth
+- **Dashboard**: Interfaz completa con persistencia de datos
+- **Tickets**: Formulario funcional con almacenamiento en Supabase
+- **Soporte**: Dashboard de soporte con gestión completa de tickets
 
 ## 🚀 Despliegue
 
